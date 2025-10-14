@@ -443,6 +443,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
     if (!mission || !mission.mission_text) return
 
     try {
+      console.log("[v0] Generating steps for branch", branchIndex, "mission:", mission.id)
       setGeneratingStepsBranch(branchIndex)
 
       const response = await fetch("/api/generate-mission-steps", {
@@ -459,20 +460,32 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
       })
 
       if (!response.ok) {
+        const errorData = await response.json()
+        console.error("[v0] API error:", errorData)
         throw new Error("Failed to generate steps")
       }
 
       const data = await response.json()
+      console.log("[v0] Received steps from API:", data.steps)
 
       setMissions((prev) => ({
         ...prev,
         [branchIndex]: {
           ...mission,
-          steps: data.steps,
+          steps: data.steps.map((step: any) => ({
+            id: step.id,
+            step_text: step.step_text,
+            display_order: step.display_order,
+            parent_step_id: step.parent_step_id,
+            is_ai_generated: step.is_ai_generated,
+          })),
         },
       }))
+
+      console.log("[v0] Steps updated in state successfully")
     } catch (error) {
       console.error("[v0] Error generating steps:", error)
+      alert("Failed to generate steps. Please try again.")
     } finally {
       setGeneratingStepsBranch(null)
     }

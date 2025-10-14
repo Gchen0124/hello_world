@@ -3,6 +3,8 @@ import { type NextRequest, NextResponse } from "next/server"
 
 export async function POST(request: NextRequest) {
   try {
+    console.log("[v0] Generate mission steps API called")
+
     const supabase = await createClient()
 
     const {
@@ -11,11 +13,14 @@ export async function POST(request: NextRequest) {
     } = await supabase.auth.getUser()
 
     if (authError || !user) {
+      console.error("[v0] Auth error:", authError)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const body = await request.json()
     const { missionId, missionText, metrics, branchName } = body
+
+    console.log("[v0] Request body:", { missionId, missionText: missionText?.substring(0, 50), metrics, branchName })
 
     // Verify mission belongs to user
     const { data: mission, error: missionError } = await supabase
@@ -25,6 +30,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (missionError || !mission || mission.timelines.user_id !== user.id) {
+      console.error("[v0] Mission verification failed:", missionError)
       return NextResponse.json({ error: "Mission not found" }, { status: 404 })
     }
 
@@ -68,6 +74,8 @@ Return ONLY a JSON array with this exact structure:
 Generate 5-8 major steps with 2-5 substeps each. Be thoughtful and realistic.
 Do not include any other text, explanations, or markdown formatting.`
 
+    console.log("[v0] Calling Gemini API...")
+
     const geminiResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${process.env.Gemini_API}`,
       {
@@ -96,25 +104,32 @@ Do not include any other text, explanations, or markdown formatting.`
     )
 
     if (!geminiResponse.ok) {
+      const errorText = await geminiResponse.text()
+      console.error("[v0] Gemini API error:", errorText)
       throw new Error("Gemini API request failed")
     }
 
     const geminiData = await geminiResponse.json()
     const generatedText = geminiData.candidates[0].content.parts[0].text
 
+    console.log("[v0] Gemini response:", generatedText.substring(0, 200))
+
     let stepsData: Array<{ step: string; substeps: string[] }>
     try {
       const cleanedText = generatedText.replace(/```json\n?|\n?```/g, "").trim()
       stepsData = JSON.parse(cleanedText)
+      console.log("[v0] Parsed steps data:", stepsData.length, "steps")
     } catch (parseError) {
       console.error("[v0] Failed to parse Gemini response:", generatedText)
       return NextResponse.json({ error: "Failed to parse steps" }, { status: 500 })
     }
 
     // Delete existing AI-generated steps
+    console.log("[v0] Deleting existing AI-generated steps...")
     await supabase.from("mission_steps").delete().eq("mission_id", missionId).eq("is_ai_generated", true)
 
     // Insert new steps with hierarchy
+    console.log("[v0] Inserting new steps...")
     const insertedSteps = []
     for (let i = 0; i < stepsData.length; i++) {
       const stepData = stepsData[i]
@@ -160,6 +175,7 @@ Do not include any other text, explanations, or markdown formatting.`
       }
     }
 
+    console.log("[v0] Successfully inserted", insertedSteps.length, "steps")
     return NextResponse.json({ steps: insertedSteps })
   } catch (error) {
     console.error("[v0] Error generating mission steps:", error)
