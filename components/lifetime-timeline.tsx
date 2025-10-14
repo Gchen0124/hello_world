@@ -1,11 +1,14 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { createClient } from "@/lib/supabase/client"
-import { Loader2, Sparkles, X } from "lucide-react"
+import { Loader2, Sparkles, X, Plus, GripVertical, Trash2 } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
 
 type EventData = {
   [year: number]: string
@@ -27,6 +30,31 @@ type Prediction = {
 
 type BranchPredictions = {
   [branchIndex: number]: Prediction[]
+}
+
+type SuccessMetric = {
+  id: string
+  metric_text: string
+  display_order: number
+}
+
+type MissionStep = {
+  id: string
+  step_text: string
+  display_order: number
+  parent_step_id: string | null
+  is_ai_generated: boolean
+}
+
+type LifeMission = {
+  id: string
+  mission_text: string | null
+  metrics: SuccessMetric[]
+  steps: MissionStep[]
+}
+
+type BranchMissions = {
+  [branchIndex: number]: LifeMission | null
 }
 
 const BRANCH_COLORS = ["border-chart-1", "border-chart-2", "border-chart-3", "border-chart-4", "border-chart-5"]
@@ -59,7 +87,16 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
     3: [],
     4: [],
   })
+  const [missions, setMissions] = useState<BranchMissions>({
+    0: null,
+    1: null,
+    2: null,
+    3: null,
+    4: null,
+  })
   const [generatingBranch, setGeneratingBranch] = useState<number | null>(null)
+  const [generatingStepsBranch, setGeneratingStepsBranch] = useState<number | null>(null)
+  const [draggedStep, setDraggedStep] = useState<{ branchIndex: number; stepId: string } | null>(null)
   const [timelineId, setTimelineId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -133,6 +170,38 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
           setFutureEvents(loadedFutureEvents)
           setPredictions(loadedPredictions)
         }
+
+        const { data: missionsData, error: missionsError } = await supabase
+          .from("life_missions")
+          .select("*")
+          .eq("timeline_id", timeline.id)
+
+        if (!missionsError && missionsData) {
+          const loadedMissions: BranchMissions = { 0: null, 1: null, 2: null, 3: null, 4: null }
+
+          for (const missionData of missionsData) {
+            const { data: metricsData } = await supabase
+              .from("success_metrics")
+              .select("*")
+              .eq("mission_id", missionData.id)
+              .order("display_order")
+
+            const { data: stepsData } = await supabase
+              .from("mission_steps")
+              .select("*")
+              .eq("mission_id", missionData.id)
+              .order("display_order")
+
+            loadedMissions[missionData.branch_index] = {
+              id: missionData.id,
+              mission_text: missionData.mission_text,
+              metrics: metricsData || [],
+              steps: stepsData || [],
+            }
+          }
+
+          setMissions(loadedMissions)
+        }
       }
     } catch (error) {
       console.error("[v0] Error loading timeline:", error)
@@ -193,6 +262,50 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
         await supabase.from("events").insert(allEvents)
       }
 
+      for (let i = 0; i < 5; i++) {
+        const mission = missions[i]
+        if (mission) {
+          await supabase.from("life_missions").upsert(
+            {
+              id: mission.id,
+              timeline_id: timelineId,
+              branch_index: i,
+              mission_text: mission.mission_text,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "timeline_id,branch_index" },
+          )
+
+          // Save metrics
+          await supabase.from("success_metrics").delete().eq("mission_id", mission.id)
+
+          if (mission.metrics.length > 0) {
+            const metricsToInsert = mission.metrics.map((metric, index) => ({
+              mission_id: mission.id,
+              metric_text: metric.metric_text,
+              display_order: index,
+            }))
+            await supabase.from("success_metrics").insert(metricsToInsert)
+          }
+
+          // Save steps (only user-edited ones, AI-generated are saved separately)
+          const userSteps = mission.steps.filter((s) => !s.is_ai_generated)
+          if (userSteps.length > 0) {
+            for (const step of userSteps) {
+              await supabase.from("mission_steps").upsert({
+                id: step.id,
+                mission_id: mission.id,
+                parent_step_id: step.parent_step_id,
+                step_text: step.step_text,
+                display_order: step.display_order,
+                is_ai_generated: false,
+                updated_at: new Date().toISOString(),
+              })
+            }
+          }
+        }
+      }
+
       console.log("[v0] Timeline saved successfully")
     } catch (error) {
       console.error("[v0] Error saving timeline:", error)
@@ -207,7 +320,6 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
     try {
       setGeneratingBranch(branchIndex)
 
-      // Delete existing predictions for this branch
       await supabase
         .from("events")
         .delete()
@@ -234,7 +346,6 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
 
       const data = await response.json()
 
-      // Update predictions state
       setPredictions((prev) => ({
         ...prev,
         [branchIndex]: data.predictions.map((p: any) => ({
@@ -263,6 +374,206 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
     }
   }
 
+  const updateMissionText = (branchIndex: number, text: string) => {
+    setMissions((prev) => {
+      const mission = prev[branchIndex] || {
+        id: crypto.randomUUID(),
+        mission_text: "",
+        metrics: [],
+        steps: [],
+      }
+      return {
+        ...prev,
+        [branchIndex]: { ...mission, mission_text: text },
+      }
+    })
+  }
+
+  const addMetric = (branchIndex: number) => {
+    setMissions((prev) => {
+      const mission = prev[branchIndex] || {
+        id: crypto.randomUUID(),
+        mission_text: "",
+        metrics: [],
+        steps: [],
+      }
+      return {
+        ...prev,
+        [branchIndex]: {
+          ...mission,
+          metrics: [
+            ...mission.metrics,
+            { id: crypto.randomUUID(), metric_text: "", display_order: mission.metrics.length },
+          ],
+        },
+      }
+    })
+  }
+
+  const updateMetric = (branchIndex: number, metricId: string, text: string) => {
+    setMissions((prev) => {
+      const mission = prev[branchIndex]
+      if (!mission) return prev
+      return {
+        ...prev,
+        [branchIndex]: {
+          ...mission,
+          metrics: mission.metrics.map((m) => (m.id === metricId ? { ...m, metric_text: text } : m)),
+        },
+      }
+    })
+  }
+
+  const deleteMetric = (branchIndex: number, metricId: string) => {
+    setMissions((prev) => {
+      const mission = prev[branchIndex]
+      if (!mission) return prev
+      return {
+        ...prev,
+        [branchIndex]: {
+          ...mission,
+          metrics: mission.metrics.filter((m) => m.id !== metricId),
+        },
+      }
+    })
+  }
+
+  const generateMissionSteps = async (branchIndex: number) => {
+    const mission = missions[branchIndex]
+    if (!mission || !mission.mission_text) return
+
+    try {
+      setGeneratingStepsBranch(branchIndex)
+
+      const response = await fetch("/api/generate-mission-steps", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          missionId: mission.id,
+          missionText: mission.mission_text,
+          metrics: mission.metrics.map((m) => m.metric_text).filter((t) => t.trim() !== ""),
+          branchName: branchNames[branchIndex],
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to generate steps")
+      }
+
+      const data = await response.json()
+
+      setMissions((prev) => ({
+        ...prev,
+        [branchIndex]: {
+          ...mission,
+          steps: data.steps,
+        },
+      }))
+    } catch (error) {
+      console.error("[v0] Error generating steps:", error)
+    } finally {
+      setGeneratingStepsBranch(null)
+    }
+  }
+
+  const updateStep = async (branchIndex: number, stepId: string, text: string) => {
+    const mission = missions[branchIndex]
+    if (!mission) return
+
+    setMissions((prev) => ({
+      ...prev,
+      [branchIndex]: {
+        ...mission,
+        steps: mission.steps.map((s) => (s.id === stepId ? { ...s, step_text: text, is_ai_generated: false } : s)),
+      },
+    }))
+
+    // Trigger re-evaluation
+    try {
+      const response = await fetch("/api/reevaluate-mission-steps", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          missionId: mission.id,
+          editedStepId: stepId,
+          editedStepText: text,
+          allSteps: mission.steps,
+          missionText: mission.mission_text,
+          metrics: mission.metrics.map((m) => m.metric_text).filter((t) => t.trim() !== ""),
+          branchName: branchNames[branchIndex],
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.suggestions && data.suggestions.length > 0) {
+          console.log("[v0] AI suggestions:", data.suggestions)
+          // You could show these suggestions to the user in a modal or notification
+        }
+      }
+    } catch (error) {
+      console.error("[v0] Error re-evaluating steps:", error)
+    }
+  }
+
+  const deleteStep = (branchIndex: number, stepId: string) => {
+    setMissions((prev) => {
+      const mission = prev[branchIndex]
+      if (!mission) return prev
+      return {
+        ...prev,
+        [branchIndex]: {
+          ...mission,
+          steps: mission.steps.filter((s) => s.id !== stepId && s.parent_step_id !== stepId),
+        },
+      }
+    })
+  }
+
+  const handleDragStart = (branchIndex: number, stepId: string) => {
+    setDraggedStep({ branchIndex, stepId })
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+  }
+
+  const handleDrop = (branchIndex: number, targetStepId: string) => {
+    if (!draggedStep || draggedStep.branchIndex !== branchIndex) return
+
+    const mission = missions[branchIndex]
+    if (!mission) return
+
+    const draggedIndex = mission.steps.findIndex((s) => s.id === draggedStep.stepId)
+    const targetIndex = mission.steps.findIndex((s) => s.id === targetStepId)
+
+    if (draggedIndex === -1 || targetIndex === -1) return
+
+    const newSteps = [...mission.steps]
+    const [removed] = newSteps.splice(draggedIndex, 1)
+    newSteps.splice(targetIndex, 0, removed)
+
+    // Update display_order
+    const updatedSteps = newSteps.map((step, index) => ({
+      ...step,
+      display_order: index,
+    }))
+
+    setMissions((prev) => ({
+      ...prev,
+      [branchIndex]: {
+        ...mission,
+        steps: updatedSteps,
+      },
+    }))
+
+    setDraggedStep(null)
+  }
+
   const handleAgeSubmit = async () => {
     const age = Number.parseInt(ageInput)
     if (age >= 0 && age <= 100) {
@@ -289,6 +600,27 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
         }))
 
         await supabase.from("possibility_branches").insert(branchInserts)
+
+        const missionInserts = Array.from({ length: 5 }, (_, i) => ({
+          timeline_id: data.id,
+          branch_index: i,
+          mission_text: null,
+        }))
+
+        const { data: insertedMissions } = await supabase.from("life_missions").insert(missionInserts).select()
+
+        if (insertedMissions) {
+          const initialMissions: BranchMissions = { 0: null, 1: null, 2: null, 3: null, 4: null }
+          insertedMissions.forEach((m) => {
+            initialMissions[m.branch_index] = {
+              id: m.id,
+              mission_text: m.mission_text,
+              metrics: [],
+              steps: [],
+            }
+          })
+          setMissions(initialMissions)
+        }
       } catch (error) {
         console.error("[v0] Error creating timeline:", error)
       }
@@ -477,6 +809,128 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                       </div>
                     )
                   })}
+                </div>
+
+                <div className="mt-6 space-y-4">
+                  <div className="relative">
+                    <div className="absolute -left-6 top-0 h-full w-px bg-gradient-to-b from-primary to-transparent" />
+                    <div
+                      className={`rounded-lg border-2 ${BRANCH_COLORS[branchIndex]} bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-4 shadow-lg`}
+                    >
+                      <h3 className="mb-2 text-center font-serif text-sm font-semibold text-amber-600">
+                        {"Ultimate Life Mission"}
+                      </h3>
+                      <Textarea
+                        placeholder="What is your ultimate mission for this life path? (up to 1000 words)"
+                        value={missions[branchIndex]?.mission_text || ""}
+                        onChange={(e) => updateMissionText(branchIndex, e.target.value)}
+                        className="min-h-[100px] resize-none border-amber-300 bg-white/50 text-sm placeholder:text-muted-foreground/60 focus:border-amber-500 focus:ring-amber-500"
+                        maxLength={5000}
+                      />
+                    </div>
+                  </div>
+
+                  {missions[branchIndex]?.mission_text && (
+                    <>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-semibold text-muted-foreground">{"Success Metrics"}</h4>
+                          <Button size="sm" variant="ghost" onClick={() => addMetric(branchIndex)} className="h-6 px-2">
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        {missions[branchIndex]?.metrics.map((metric) => (
+                          <div key={metric.id} className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              placeholder="Success metric..."
+                              value={metric.metric_text}
+                              onChange={(e) => updateMetric(branchIndex, metric.id, e.target.value)}
+                              className="flex-1 rounded border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
+                            />
+                            <button onClick={() => deleteMetric(branchIndex, metric.id)}>
+                              <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-semibold text-muted-foreground">{"Key Steps"}</h4>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => generateMissionSteps(branchIndex)}
+                            disabled={generatingStepsBranch !== null}
+                            className="h-6 px-2 text-xs"
+                          >
+                            {generatingStepsBranch === branchIndex ? (
+                              <>
+                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                {"Generating..."}
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="mr-1 h-3 w-3" />
+                                {"Generate Steps"}
+                              </>
+                            )}
+                          </Button>
+                        </div>
+
+                        <div className="space-y-1">
+                          {missions[branchIndex]?.steps
+                            .filter((s) => !s.parent_step_id)
+                            .map((step) => (
+                              <div key={step.id} className="space-y-1">
+                                <div
+                                  draggable
+                                  onDragStart={() => handleDragStart(branchIndex, step.id)}
+                                  onDragOver={handleDragOver}
+                                  onDrop={() => handleDrop(branchIndex, step.id)}
+                                  className="group flex items-start gap-2 rounded border border-border bg-background p-2 hover:border-primary"
+                                >
+                                  <GripVertical className="mt-0.5 h-3 w-3 flex-shrink-0 cursor-move text-muted-foreground" />
+                                  <input
+                                    type="text"
+                                    value={step.step_text}
+                                    onChange={(e) => updateStep(branchIndex, step.id, e.target.value)}
+                                    className="flex-1 bg-transparent text-xs outline-none"
+                                  />
+                                  <button onClick={() => deleteStep(branchIndex, step.id)} className="flex-shrink-0">
+                                    <Trash2 className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive" />
+                                  </button>
+                                </div>
+
+                                {missions[branchIndex]?.steps
+                                  .filter((s) => s.parent_step_id === step.id)
+                                  .map((substep) => (
+                                    <div
+                                      key={substep.id}
+                                      className="group ml-6 flex items-start gap-2 rounded border border-border/50 bg-muted/30 p-2 hover:border-primary/50"
+                                    >
+                                      <div className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-muted-foreground" />
+                                      <input
+                                        type="text"
+                                        value={substep.step_text}
+                                        onChange={(e) => updateStep(branchIndex, substep.id, e.target.value)}
+                                        className="flex-1 bg-transparent text-xs outline-none"
+                                      />
+                                      <button
+                                        onClick={() => deleteStep(branchIndex, substep.id)}
+                                        className="flex-shrink-0"
+                                      >
+                                        <Trash2 className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive" />
+                                      </button>
+                                    </div>
+                                  ))}
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
