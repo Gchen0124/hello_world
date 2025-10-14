@@ -440,11 +440,48 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
 
   const generateMissionSteps = async (branchIndex: number) => {
     const mission = missions[branchIndex]
-    if (!mission || !mission.mission_text) return
+    if (!mission || !mission.mission_text || !timelineId) {
+      console.log("[v0] Cannot generate steps - missing mission or timeline")
+      return
+    }
 
     try {
       console.log("[v0] Generating steps for branch", branchIndex, "mission:", mission.id)
       setGeneratingStepsBranch(branchIndex)
+
+      console.log("[v0] Saving mission to database first...")
+      const { error: missionError } = await supabase.from("life_missions").upsert(
+        {
+          id: mission.id,
+          timeline_id: timelineId,
+          branch_index: branchIndex,
+          mission_text: mission.mission_text,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "timeline_id,branch_index" },
+      )
+
+      if (missionError) {
+        console.error("[v0] Error saving mission:", missionError)
+        throw new Error("Failed to save mission")
+      }
+
+      // Save metrics too
+      if (mission.metrics.length > 0) {
+        await supabase.from("success_metrics").delete().eq("mission_id", mission.id)
+        const metricsToInsert = mission.metrics
+          .filter((m) => m.metric_text.trim() !== "")
+          .map((metric, index) => ({
+            mission_id: mission.id,
+            metric_text: metric.metric_text,
+            display_order: index,
+          }))
+        if (metricsToInsert.length > 0) {
+          await supabase.from("success_metrics").insert(metricsToInsert)
+        }
+      }
+
+      console.log("[v0] Mission saved, now calling API...")
 
       const response = await fetch("/api/generate-mission-steps", {
         method: "POST",
