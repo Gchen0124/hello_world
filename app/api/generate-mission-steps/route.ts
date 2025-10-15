@@ -76,8 +76,14 @@ Do not include any other text, explanations, or markdown formatting.`
 
     console.log("[v0] Calling Gemini API...")
 
+    const geminiApiKey = process.env.Gemini_API
+    if (!geminiApiKey) {
+      console.error("[v0] Gemini API key is missing")
+      return NextResponse.json({ error: "Gemini API key not configured" }, { status: 500 })
+    }
+
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${process.env.Gemini_API}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`,
       {
         method: "POST",
         headers: {
@@ -106,10 +112,17 @@ Do not include any other text, explanations, or markdown formatting.`
     if (!geminiResponse.ok) {
       const errorText = await geminiResponse.text()
       console.error("[v0] Gemini API error:", errorText)
-      throw new Error("Gemini API request failed")
+      console.error("[v0] Gemini API status:", geminiResponse.status)
+      return NextResponse.json({ error: `Gemini API failed: ${geminiResponse.status} - ${errorText}` }, { status: 500 })
     }
 
     const geminiData = await geminiResponse.json()
+
+    if (!geminiData.candidates || !geminiData.candidates[0] || !geminiData.candidates[0].content) {
+      console.error("[v0] Invalid Gemini response structure:", JSON.stringify(geminiData))
+      return NextResponse.json({ error: "Invalid response from Gemini API" }, { status: 500 })
+    }
+
     const generatedText = geminiData.candidates[0].content.parts[0].text
 
     console.log("[v0] Gemini response:", generatedText.substring(0, 200))
@@ -185,6 +198,10 @@ Do not include any other text, explanations, or markdown formatting.`
     return NextResponse.json({ steps: insertedSteps })
   } catch (error) {
     console.error("[v0] Error generating mission steps:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    const errorStack = error instanceof Error ? error.stack : ""
+    console.error("[v0] Error details:", errorMessage)
+    console.error("[v0] Error stack:", errorStack)
+    return NextResponse.json({ error: `Internal server error: ${errorMessage}` }, { status: 500 })
   }
 }

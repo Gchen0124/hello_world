@@ -1,7 +1,4 @@
 import { createClient } from "@/lib/supabase/server"
-import { GoogleGenerativeAI } from "@google/generative-ai"
-
-const genAI = new GoogleGenerativeAI(process.env.Gemini_API || "")
 
 export async function POST(request: Request) {
   try {
@@ -112,9 +109,56 @@ Return your response as a JSON array of predictions:
 
 Only include years where predictions should be updated or added. Return empty array [] if no changes needed.`
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" })
-    const result = await model.generateContent(prompt)
-    const responseText = result.response.text()
+    const geminiApiKey = process.env.Gemini_API
+    if (!geminiApiKey) {
+      console.error("[v0] Gemini API key is missing")
+      return Response.json({ error: "Gemini API key not configured" }, { status: 500 })
+    }
+
+    console.log("[v0] Calling Gemini API to adapt predictions...")
+
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: prompt,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 2048,
+          },
+        }),
+      },
+    )
+
+    if (!geminiResponse.ok) {
+      const errorText = await geminiResponse.text()
+      console.error("[v0] Gemini API error:", errorText)
+      console.error("[v0] Gemini API status:", geminiResponse.status)
+      return Response.json({ error: `Gemini API failed: ${geminiResponse.status} - ${errorText}` }, { status: 500 })
+    }
+
+    const geminiData = await geminiResponse.json()
+
+    if (!geminiData.candidates || !geminiData.candidates[0] || !geminiData.candidates[0].content) {
+      console.error("[v0] Invalid Gemini response structure:", JSON.stringify(geminiData))
+      return Response.json({ error: "Invalid response from Gemini API" }, { status: 500 })
+    }
+
+    const responseText = geminiData.candidates[0].content.parts[0].text
 
     console.log("[v0] Gemini response:", responseText.substring(0, 300))
 
@@ -163,6 +207,8 @@ Only include years where predictions should be updated or added. Return empty ar
     return Response.json({ predictions: [], message: "No updates needed" })
   } catch (error) {
     console.error("[v0] Error adapting timeline:", error)
-    return Response.json({ error: "Failed to adapt timeline" }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    console.error("[v0] Error details:", errorMessage)
+    return Response.json({ error: `Failed to adapt timeline: ${errorMessage}` }, { status: 500 })
   }
 }

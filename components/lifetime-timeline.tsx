@@ -326,15 +326,26 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
     if (!timelineId || !currentAge) return
 
     try {
+      console.log("[v0] ===== GENERATE PREDICTIONS START =====")
+      console.log("[v0] Branch Index:", branchIndex)
+      console.log("[v0] Branch Name:", branchNames[branchIndex])
+      console.log("[v0] Timeline ID:", timelineId)
+      console.log("[v0] Current Age:", currentAge)
+
       setGeneratingBranch(branchIndex)
 
-      await supabase
+      const { error: deleteError } = await supabase
         .from("events")
         .delete()
         .eq("timeline_id", timelineId)
         .eq("branch_index", branchIndex)
         .eq("is_prediction", true)
 
+      if (deleteError) {
+        console.error("[v0] Error deleting old predictions:", deleteError)
+      }
+
+      console.log("[v0] Calling API...")
       const response = await fetch("/api/generate-predictions", {
         method: "POST",
         headers: {
@@ -348,11 +359,17 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
         }),
       })
 
+      console.log("[v0] API Response Status:", response.status)
+
       if (!response.ok) {
-        throw new Error("Failed to generate predictions")
+        const errorData = await response.json()
+        console.error("[v0] API Error:", errorData)
+        throw new Error(`Failed to generate predictions: ${errorData.error || "Unknown error"}`)
       }
 
       const data = await response.json()
+      console.log("[v0] API Response Data:", data)
+      console.log("[v0] Predictions received:", data.predictions?.length || 0)
 
       setPredictions((prev) => ({
         ...prev,
@@ -362,8 +379,12 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
           event_text: p.event_text,
         })),
       }))
+
+      console.log("[v0] ===== GENERATE PREDICTIONS SUCCESS =====")
     } catch (error) {
-      console.error("[v0] Error generating predictions:", error)
+      console.error("[v0] ===== GENERATE PREDICTIONS ERROR =====")
+      console.error("[v0] Error:", error)
+      alert(`Failed to generate predictions for ${branchNames[branchIndex]}. Check console for details.`)
     } finally {
       setGeneratingBranch(null)
     }
@@ -449,12 +470,23 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
   const generateMissionSteps = async (branchIndex: number) => {
     const mission = missions[branchIndex]
     if (!mission || !mission.mission_text || !timelineId) {
-      console.log("[v0] Cannot generate steps - missing mission or timeline")
+      console.log("[v0] ===== CANNOT GENERATE STEPS =====")
+      console.log("[v0] Branch Index:", branchIndex)
+      console.log("[v0] Mission exists:", !!mission)
+      console.log("[v0] Mission text:", mission?.mission_text?.substring(0, 50))
+      console.log("[v0] Timeline ID:", timelineId)
+      alert("Please enter a mission text before generating steps.")
       return
     }
 
     try {
-      console.log("[v0] Generating steps for branch", branchIndex, "mission:", mission.id)
+      console.log("[v0] ===== GENERATE MISSION STEPS START =====")
+      console.log("[v0] Branch Index:", branchIndex)
+      console.log("[v0] Branch Name:", branchNames[branchIndex])
+      console.log("[v0] Mission ID:", mission.id)
+      console.log("[v0] Mission Text:", mission.mission_text.substring(0, 100))
+      console.log("[v0] Metrics Count:", mission.metrics.length)
+
       setGeneratingStepsBranch(branchIndex)
 
       console.log("[v0] Saving mission to database first...")
@@ -474,9 +506,16 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
         throw new Error("Failed to save mission")
       }
 
-      // Save metrics too
       if (mission.metrics.length > 0) {
-        await supabase.from("success_metrics").delete().eq("mission_id", mission.id)
+        const { error: deleteMetricsError } = await supabase
+          .from("success_metrics")
+          .delete()
+          .eq("mission_id", mission.id)
+
+        if (deleteMetricsError) {
+          console.error("[v0] Error deleting old metrics:", deleteMetricsError)
+        }
+
         const metricsToInsert = mission.metrics
           .filter((m) => m.metric_text.trim() !== "")
           .map((metric, index) => ({
@@ -484,8 +523,13 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
             metric_text: metric.metric_text,
             display_order: index,
           }))
+
         if (metricsToInsert.length > 0) {
-          await supabase.from("success_metrics").insert(metricsToInsert)
+          const { error: insertMetricsError } = await supabase.from("success_metrics").insert(metricsToInsert)
+
+          if (insertMetricsError) {
+            console.error("[v0] Error inserting metrics:", insertMetricsError)
+          }
         }
       }
 
@@ -504,14 +548,16 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
         }),
       })
 
+      console.log("[v0] API Response Status:", response.status)
+
       if (!response.ok) {
         const errorData = await response.json()
-        console.error("[v0] API error:", errorData)
-        throw new Error("Failed to generate steps")
+        console.error("[v0] API Error:", errorData)
+        throw new Error(`Failed to generate steps: ${errorData.error || "Unknown error"}`)
       }
 
       const data = await response.json()
-      console.log("[v0] Received steps from API:", data.steps)
+      console.log("[v0] Received steps from API:", data.steps?.length || 0)
 
       setMissions((prev) => ({
         ...prev,
@@ -523,15 +569,16 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
             display_order: step.display_order,
             parent_step_id: step.parent_step_id,
             is_ai_generated: step.is_ai_generated,
-            is_user_edited: false, // New steps are not user edited initially
+            is_user_edited: false,
           })),
         },
       }))
 
-      console.log("[v0] Steps updated in state successfully")
+      console.log("[v0] ===== GENERATE MISSION STEPS SUCCESS =====")
     } catch (error) {
-      console.error("[v0] Error generating steps:", error)
-      alert("Failed to generate steps. Please try again.")
+      console.error("[v0] ===== GENERATE MISSION STEPS ERROR =====")
+      console.error("[v0] Error:", error)
+      alert(`Failed to generate steps for ${branchNames[branchIndex]}. Check console for details.`)
     } finally {
       setGeneratingStepsBranch(null)
     }
@@ -540,13 +587,15 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
   const handleEventBlur = async (branchIndex: number, year: number, eventText: string) => {
     if (!timelineId || !eventText.trim() || year < currentAge!) return
 
-    console.log("[v0] User finished editing event at year", year, "on branch", branchIndex)
+    console.log("[v0] ===== EVENT BLUR ADAPTATION START =====")
+    console.log("[v0] Branch Index:", branchIndex)
+    console.log("[v0] Year:", year)
+    console.log("[v0] Event:", eventText.substring(0, 50))
 
     try {
       setAdaptingBranch(branchIndex)
 
-      // Mark this event as user-edited in database
-      await supabase.from("events").upsert({
+      const { error: upsertError } = await supabase.from("events").upsert({
         timeline_id: timelineId,
         branch_index: branchIndex,
         year: year,
@@ -555,6 +604,13 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
         is_user_edited: true,
         last_edited_at: new Date().toISOString(),
       })
+
+      if (upsertError) {
+        console.error("[v0] Error saving event:", upsertError)
+        throw upsertError
+      }
+
+      console.log("[v0] Event saved, calling adaptation API...")
 
       // Trigger AI adaptation
       const response = await fetch("/api/adapt-timeline-predictions", {
@@ -570,11 +626,12 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
         }),
       })
 
+      console.log("[v0] Adaptation API Response Status:", response.status)
+
       if (response.ok) {
         const data = await response.json()
         console.log("[v0] AI adapted", data.predictions?.length || 0, "predictions")
 
-        // Update predictions in state
         if (data.predictions && data.predictions.length > 0) {
           setPredictions((prev) => {
             const existingPredictions = prev[branchIndex].filter(
@@ -593,9 +650,14 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
             }
           })
         }
+        console.log("[v0] ===== EVENT BLUR ADAPTATION SUCCESS =====")
+      } else {
+        const errorData = await response.json()
+        console.error("[v0] Adaptation API Error:", errorData)
       }
     } catch (error) {
-      console.error("[v0] Error adapting timeline:", error)
+      console.error("[v0] ===== EVENT BLUR ADAPTATION ERROR =====")
+      console.error("[v0] Error:", error)
     } finally {
       setAdaptingBranch(null)
     }
@@ -619,13 +681,15 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
     const mission = missions[branchIndex]
     if (!mission || !text.trim()) return
 
-    console.log("[v0] User finished editing step", stepId)
+    console.log("[v0] ===== STEP BLUR ADAPTATION START =====")
+    console.log("[v0] Branch Index:", branchIndex)
+    console.log("[v0] Step ID:", stepId)
+    console.log("[v0] Step Text:", text.substring(0, 50))
 
     try {
       setAdaptingStepBranch(branchIndex)
 
-      // Save the edited step to database
-      await supabase
+      const { error: updateError } = await supabase
         .from("mission_steps")
         .update({
           step_text: text,
@@ -633,6 +697,13 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
           last_edited_at: new Date().toISOString(),
         })
         .eq("id", stepId)
+
+      if (updateError) {
+        console.error("[v0] Error updating step:", updateError)
+        throw updateError
+      }
+
+      console.log("[v0] Step saved, calling adaptation API...")
 
       // Trigger AI adaptation
       const response = await fetch("/api/adapt-mission-steps", {
@@ -651,34 +722,43 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
         }),
       })
 
+      console.log("[v0] Adaptation API Response Status:", response.status)
+
       if (response.ok) {
         const data = await response.json()
         console.log("[v0] AI adaptation result:", data.message)
 
-        // Reload steps from database to get updated AI suggestions
         if (data.suggestions && data.suggestions.length > 0) {
-          const { data: updatedSteps } = await supabase
+          const { data: updatedSteps, error: fetchError } = await supabase
             .from("mission_steps")
             .select("*")
             .eq("mission_id", mission.id)
             .order("display_order")
 
-          if (updatedSteps) {
+          if (fetchError) {
+            console.error("[v0] Error fetching updated steps:", fetchError)
+          } else if (updatedSteps) {
             setMissions((prev) => ({
               ...prev,
               [branchIndex]: {
                 ...mission,
                 steps: updatedSteps.map((s) => ({
                   ...s,
-                  is_user_edited: s.is_user_edited || false, // Ensure this is defined
+                  is_user_edited: s.is_user_edited || false,
                 })),
               },
             }))
+            console.log("[v0] Steps reloaded from database")
           }
         }
+        console.log("[v0] ===== STEP BLUR ADAPTATION SUCCESS =====")
+      } else {
+        const errorData = await response.json()
+        console.error("[v0] Adaptation API Error:", errorData)
       }
     } catch (error) {
-      console.error("[v0] Error adapting steps:", error)
+      console.error("[v0] ===== STEP BLUR ADAPTATION ERROR =====")
+      console.error("[v0] Error:", error)
     } finally {
       setAdaptingStepBranch(null)
     }

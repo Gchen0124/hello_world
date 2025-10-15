@@ -114,9 +114,15 @@ Do not include any other text, explanations, or markdown formatting.`
 
     console.log("[v0] Calling Gemini API for branch", branchIndex)
 
+    const geminiApiKey = process.env.Gemini_API
+    if (!geminiApiKey) {
+      console.error("[v0] Gemini API key is missing")
+      return NextResponse.json({ error: "Gemini API key not configured" }, { status: 500 })
+    }
+
     // Call Gemini API
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${process.env.Gemini_API}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`,
       {
         method: "POST",
         headers: {
@@ -143,17 +149,27 @@ Do not include any other text, explanations, or markdown formatting.`
     )
 
     if (!geminiResponse.ok) {
-      throw new Error("Gemini API request failed")
+      const errorText = await geminiResponse.text()
+      console.error("[v0] Gemini API error response:", errorText)
+      console.error("[v0] Gemini API status:", geminiResponse.status)
+      return NextResponse.json({ error: `Gemini API failed: ${geminiResponse.status} - ${errorText}` }, { status: 500 })
     }
 
     const geminiData = await geminiResponse.json()
+
+    if (!geminiData.candidates || !geminiData.candidates[0] || !geminiData.candidates[0].content) {
+      console.error("[v0] Invalid Gemini response structure:", JSON.stringify(geminiData))
+      return NextResponse.json({ error: "Invalid response from Gemini API" }, { status: 500 })
+    }
+
     const generatedText = geminiData.candidates[0].content.parts[0].text
 
-    // Parse the JSON response
+    console.log("[v0] Gemini generated text:", generatedText.substring(0, 200))
+
+    // Remove markdown code blocks if present
+    const cleanedText = generatedText.replace(/```json\n?|\n?```/g, "").trim()
     let predictions: Array<{ year: number; event: string }>
     try {
-      // Remove markdown code blocks if present
-      const cleanedText = generatedText.replace(/```json\n?|\n?```/g, "").trim()
       predictions = JSON.parse(cleanedText)
     } catch (parseError) {
       console.error("[v0] Failed to parse Gemini response:", generatedText)
@@ -192,6 +208,8 @@ Do not include any other text, explanations, or markdown formatting.`
     return NextResponse.json({ predictions: insertedPredictions })
   } catch (error) {
     console.error("[v0] Error generating predictions:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    console.error("[v0] Error details:", errorMessage)
+    return NextResponse.json({ error: `Internal server error: ${errorMessage}` }, { status: 500 })
   }
 }
