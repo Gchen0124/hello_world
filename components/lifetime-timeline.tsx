@@ -44,6 +44,7 @@ type MissionStep = {
   display_order: number
   parent_step_id: string | null
   is_ai_generated: boolean
+  is_user_edited?: boolean // Added for tracking user edits
 }
 
 type LifeMission = {
@@ -100,6 +101,8 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
   const [timelineId, setTimelineId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [adaptingBranch, setAdaptingBranch] = useState<number | null>(null)
+  const [adaptingStepBranch, setAdaptingStepBranch] = useState<number | null>(null)
 
   const supabase = createClient()
 
@@ -196,7 +199,11 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
               id: missionData.id,
               mission_text: missionData.mission_text,
               metrics: metricsData || [],
-              steps: stepsData || [],
+              steps:
+                stepsData?.map((s) => ({
+                  ...s,
+                  is_user_edited: s.is_user_edited || false, // Ensure is_user_edited is defined
+                })) || [],
             }
           }
 
@@ -289,7 +296,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
           }
 
           // Save steps (only user-edited ones, AI-generated are saved separately)
-          const userSteps = mission.steps.filter((s) => !s.is_ai_generated)
+          const userSteps = mission.steps.filter((s) => !s.is_ai_generated || s.is_user_edited)
           if (userSteps.length > 0) {
             for (const step of userSteps) {
               await supabase.from("mission_steps").upsert({
@@ -298,8 +305,9 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                 parent_step_id: step.parent_step_id,
                 step_text: step.step_text,
                 display_order: step.display_order,
-                is_ai_generated: false,
-                updated_at: new Date().toISOString(),
+                is_ai_generated: step.is_ai_generated,
+                is_user_edited: step.is_user_edited || false, // Ensure this is saved
+                last_edited_at: step.is_user_edited ? new Date().toISOString() : undefined, // Save edit time if user edited
               })
             }
           }
@@ -515,6 +523,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
             display_order: step.display_order,
             parent_step_id: step.parent_step_id,
             is_ai_generated: step.is_ai_generated,
+            is_user_edited: false, // New steps are not user edited initially
           })),
         },
       }))
@@ -528,21 +537,105 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
     }
   }
 
+  const handleEventBlur = async (branchIndex: number, year: number, eventText: string) => {
+    if (!timelineId || !eventText.trim() || year < currentAge!) return
+
+    console.log("[v0] User finished editing event at year", year, "on branch", branchIndex)
+
+    try {
+      setAdaptingBranch(branchIndex)
+
+      // Mark this event as user-edited in database
+      await supabase.from("events").upsert({
+        timeline_id: timelineId,
+        branch_index: branchIndex,
+        year: year,
+        event_text: eventText,
+        is_prediction: false,
+        is_user_edited: true,
+        last_edited_at: new Date().toISOString(),
+      })
+
+      // Trigger AI adaptation
+      const response = await fetch("/api/adapt-timeline-predictions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          timelineId,
+          branchIndex,
+          editedYear: year,
+          editedEvent: eventText,
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log("[v0] AI adapted", data.predictions?.length || 0, "predictions")
+
+        // Update predictions in state
+        if (data.predictions && data.predictions.length > 0) {
+          setPredictions((prev) => {
+            const existingPredictions = prev[branchIndex].filter(
+              (p) => !data.predictions.some((newP: any) => newP.year === p.year),
+            )
+            return {
+              ...prev,
+              [branchIndex]: [
+                ...existingPredictions,
+                ...data.predictions.map((p: any) => ({
+                  id: p.id,
+                  year: p.year,
+                  event_text: p.event_text,
+                })),
+              ].sort((a, b) => a.year - b.year),
+            }
+          })
+        }
+      }
+    } catch (error) {
+      console.error("[v0] Error adapting timeline:", error)
+    } finally {
+      setAdaptingBranch(null)
+    }
+  }
+
   const updateStep = async (branchIndex: number, stepId: string, text: string) => {
     const mission = missions[branchIndex]
     if (!mission) return
 
+    // Update local state immediately
     setMissions((prev) => ({
       ...prev,
       [branchIndex]: {
         ...mission,
-        steps: mission.steps.map((s) => (s.id === stepId ? { ...s, step_text: text, is_ai_generated: false } : s)),
+        steps: mission.steps.map((s) => (s.id === stepId ? { ...s, step_text: text, is_user_edited: true } : s)),
       },
     }))
+  }
 
-    // Trigger re-evaluation
+  const handleStepBlur = async (branchIndex: number, stepId: string, text: string) => {
+    const mission = missions[branchIndex]
+    if (!mission || !text.trim()) return
+
+    console.log("[v0] User finished editing step", stepId)
+
     try {
-      const response = await fetch("/api/reevaluate-mission-steps", {
+      setAdaptingStepBranch(branchIndex)
+
+      // Save the edited step to database
+      await supabase
+        .from("mission_steps")
+        .update({
+          step_text: text,
+          is_user_edited: true,
+          last_edited_at: new Date().toISOString(),
+        })
+        .eq("id", stepId)
+
+      // Trigger AI adaptation
+      const response = await fetch("/api/adapt-mission-steps", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -560,13 +653,34 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
 
       if (response.ok) {
         const data = await response.json()
+        console.log("[v0] AI adaptation result:", data.message)
+
+        // Reload steps from database to get updated AI suggestions
         if (data.suggestions && data.suggestions.length > 0) {
-          console.log("[v0] AI suggestions:", data.suggestions)
-          // You could show these suggestions to the user in a modal or notification
+          const { data: updatedSteps } = await supabase
+            .from("mission_steps")
+            .select("*")
+            .eq("mission_id", mission.id)
+            .order("display_order")
+
+          if (updatedSteps) {
+            setMissions((prev) => ({
+              ...prev,
+              [branchIndex]: {
+                ...mission,
+                steps: updatedSteps.map((s) => ({
+                  ...s,
+                  is_user_edited: s.is_user_edited || false, // Ensure this is defined
+                })),
+              },
+            }))
+          }
         }
       }
     } catch (error) {
-      console.error("[v0] Error re-evaluating steps:", error)
+      console.error("[v0] Error adapting steps:", error)
+    } finally {
+      setAdaptingStepBranch(null)
     }
   }
 
@@ -820,8 +934,14 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                     )}
                   </Button>
                 </div>
+                {adaptingBranch === branchIndex && (
+                  <div className="mb-2 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>{"AI adapting predictions..."}</span>
+                  </div>
+                )}
                 <div className={`relative border-l-2 ${BRANCH_COLORS[branchIndex]} pl-6`}>
-                  {Array.from({ length: 100 - currentAge + 1 }, (_, i) => currentAge + i).map((year) => {
+                  {Array.from({ length: 100 - currentAge! + 1 }, (_, i) => currentAge! + i).map((year) => {
                     const prediction = predictions[branchIndex].find((p) => p.year === year)
 
                     return (
@@ -852,6 +972,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                               placeholder="event"
                               value={futureEvents[branchIndex][year] || ""}
                               onChange={(e) => updateFutureEvent(branchIndex, year, e.target.value)}
+                              onBlur={(e) => handleEventBlur(branchIndex, year, e.target.value)}
                               className="flex-1 border-b border-border bg-transparent px-1 py-0.5 text-xs outline-none placeholder:text-muted-foreground/50 focus:border-primary"
                             />
                           )}
@@ -908,25 +1029,32 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <h4 className="text-xs font-semibold text-muted-foreground">{"Key Steps"}</h4>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => generateMissionSteps(branchIndex)}
-                            disabled={generatingStepsBranch !== null}
-                            className="h-6 px-2 text-xs"
-                          >
-                            {generatingStepsBranch === branchIndex ? (
-                              <>
-                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                {"Generating..."}
-                              </>
-                            ) : (
-                              <>
-                                <Sparkles className="mr-1 h-3 w-3" />
-                                {"Generate Steps"}
-                              </>
-                            )}
-                          </Button>
+                          {adaptingStepBranch === branchIndex ? (
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              <span>{"Adapting..."}</span>
+                            </div>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => generateMissionSteps(branchIndex)}
+                              disabled={generatingStepsBranch !== null}
+                              className="h-6 px-2 text-xs"
+                            >
+                              {generatingStepsBranch === branchIndex ? (
+                                <>
+                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                  {"Generating..."}
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="mr-1 h-3 w-3" />
+                                  {"Generate Steps"}
+                                </>
+                              )}
+                            </Button>
+                          )}
                         </div>
 
                         <div className="space-y-1">
@@ -946,6 +1074,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                                     type="text"
                                     value={step.step_text}
                                     onChange={(e) => updateStep(branchIndex, step.id, e.target.value)}
+                                    onBlur={(e) => handleStepBlur(branchIndex, step.id, e.target.value)}
                                     className="flex-1 bg-transparent text-xs outline-none"
                                   />
                                   <button onClick={() => deleteStep(branchIndex, step.id)} className="flex-shrink-0">
@@ -965,6 +1094,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                                         type="text"
                                         value={substep.step_text}
                                         onChange={(e) => updateStep(branchIndex, substep.id, e.target.value)}
+                                        onBlur={(e) => handleStepBlur(branchIndex, substep.id, e.target.value)}
                                         className="flex-1 bg-transparent text-xs outline-none"
                                       />
                                       <button
