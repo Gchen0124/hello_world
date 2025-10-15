@@ -124,9 +124,13 @@ Do not include any other text, explanations, or markdown formatting.`
       return NextResponse.json({ error: "Failed to parse steps" }, { status: 500 })
     }
 
-    // Delete existing AI-generated steps
-    console.log("[v0] Deleting existing AI-generated steps...")
-    await supabase.from("mission_steps").delete().eq("mission_id", missionId).eq("is_ai_generated", true)
+    console.log("[v0] Deleting existing AI-generated steps for mission", missionId)
+    await supabase
+      .from("mission_steps")
+      .delete()
+      .eq("mission_id", missionId)
+      .eq("is_ai_generated", true)
+      .eq("is_user_edited", false) // Don't delete user-edited AI steps
 
     // Insert new steps with hierarchy
     console.log("[v0] Inserting new steps...")
@@ -142,6 +146,7 @@ Do not include any other text, explanations, or markdown formatting.`
           step_text: stepData.step,
           display_order: i,
           is_ai_generated: true,
+          is_user_edited: false, // Explicitly set as not user-edited
         })
         .select()
         .single()
@@ -164,6 +169,7 @@ Do not include any other text, explanations, or markdown formatting.`
               step_text: stepData.substeps[j],
               display_order: j,
               is_ai_generated: true,
+              is_user_edited: false, // Explicitly set as not user-edited
             })
             .select()
             .single()

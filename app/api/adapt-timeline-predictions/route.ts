@@ -18,7 +18,6 @@ export async function POST(request: Request) {
       return Response.json({ error: "Timeline not found" }, { status: 404 })
     }
 
-    // Get branch name and mission
     const { data: branch } = await supabase
       .from("possibility_branches")
       .select("branch_name")
@@ -44,7 +43,6 @@ export async function POST(request: Request) {
       .lte("year", timeline.current_age)
       .order("year")
 
-    // Get all user entries for this branch (not predictions, not the edited one)
     const { data: userEntries } = await supabase
       .from("events")
       .select("year, event_text, is_user_edited")
@@ -53,7 +51,6 @@ export async function POST(request: Request) {
       .eq("is_prediction", false)
       .order("year")
 
-    // Get existing AI predictions (excluding user-edited ones)
     const { data: existingPredictions } = await supabase
       .from("events")
       .select("id, year, event_text")
@@ -62,6 +59,15 @@ export async function POST(request: Request) {
       .eq("is_prediction", true)
       .eq("is_user_edited", false)
       .order("year")
+
+    console.log(
+      "[v0] Found",
+      userEntries?.length || 0,
+      "user entries and",
+      existingPredictions?.length || 0,
+      "AI predictions for branch",
+      branchIndex,
+    )
 
     // Build context for Gemini
     const pastEventsText = pastEvents?.map((e) => `Year ${e.year}: ${e.event_text}`).join("\n") || "No past events"
@@ -85,22 +91,23 @@ ${userEntriesText}
 **Recent Edit:**
 - Year ${editedYear}: ${editedEvent}
 
-**Existing AI Predictions:**
+**Existing AI Predictions for this branch:**
 ${existingPredictions?.map((p) => `Year ${p.year}: ${p.event_text}`).join("\n") || "None"}
 
 **Task:**
 Based on this new edit at Year ${editedYear}, analyze how this change affects the timeline and suggest updated predictions for years BEFORE and AFTER this event. 
 
 IMPORTANT RULES:
-1. DO NOT modify or suggest changes to any user-entered events (the ones in "User's Future Plans")
+1. DO NOT modify or suggest changes to any user-entered events
 2. ONLY suggest updates to AI-generated predictions
-3. Focus on years immediately before (within 3 years) and after (within 5 years) the edited event
-4. Ensure predictions align with the mission, metrics, and the new context created by the edit
-5. Keep predictions realistic and specific
+3. Focus on years within 3 years before and 5 years after the edited event
+4. Ensure predictions align with the mission, metrics, and the new context
+5. Keep predictions realistic and specific (max 15 words each)
+6. If a prediction no longer makes sense, suggest removing it (don't include it in response)
 
 Return your response as a JSON array of predictions:
 [
-  {"year": <number>, "event": "<prediction text>", "reason": "<why this prediction makes sense>"}
+  {"year": <number>, "event": "<prediction text>", "reason": "<why this makes sense>"}
 ]
 
 Only include years where predictions should be updated or added. Return empty array [] if no changes needed.`
@@ -109,7 +116,7 @@ Only include years where predictions should be updated or added. Return empty ar
     const result = await model.generateContent(prompt)
     const responseText = result.response.text()
 
-    console.log("[v0] Gemini response:", responseText)
+    console.log("[v0] Gemini response:", responseText.substring(0, 300))
 
     // Parse JSON from response
     const jsonMatch = responseText.match(/\[[\s\S]*\]/)
@@ -124,13 +131,13 @@ Only include years where predictions should be updated or added. Return empty ar
     const yearsToUpdate = adaptedPredictions.map((p: any) => p.year)
 
     if (yearsToUpdate.length > 0) {
-      // Delete old predictions for these specific years
       await supabase
         .from("events")
         .delete()
         .eq("timeline_id", timelineId)
         .eq("branch_index", branchIndex)
         .eq("is_prediction", true)
+        .eq("is_user_edited", false) // Only delete non-user-edited predictions
         .in("year", yearsToUpdate)
 
       // Insert new predictions
@@ -145,7 +152,7 @@ Only include years where predictions should be updated or added. Return empty ar
 
       const { data: inserted } = await supabase.from("events").insert(newPredictions).select()
 
-      console.log("[v0] Updated", inserted?.length || 0, "predictions")
+      console.log("[v0] Updated", inserted?.length || 0, "predictions for branch", branchIndex)
 
       return Response.json({
         predictions: inserted || [],

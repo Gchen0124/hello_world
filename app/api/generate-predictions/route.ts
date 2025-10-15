@@ -18,6 +18,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { timelineId, branchIndex, branchName, currentAge } = body
 
+    console.log("[v0] Generating predictions for branch", branchIndex, "timeline", timelineId)
+
     // Verify timeline belongs to user
     const { data: timeline, error: timelineError } = await supabase
       .from("timelines")
@@ -30,6 +32,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Timeline not found" }, { status: 404 })
     }
 
+    const { data: mission } = await supabase
+      .from("life_missions")
+      .select("mission_text, success_metrics(metric_text)")
+      .eq("timeline_id", timelineId)
+      .eq("branch_index", branchIndex)
+      .single()
+
+    const missionContext = mission?.mission_text
+      ? `\nLife Mission for this path: "${mission.mission_text}"\nSuccess Metrics: ${mission.success_metrics?.map((m: any) => m.metric_text).join(", ") || "None"}`
+      : ""
+
     // Get past 7 years of events
     const pastStartYear = Math.max(0, currentAge - 7)
     const { data: pastEvents } = await supabase
@@ -41,7 +54,6 @@ export async function POST(request: NextRequest) {
       .lte("year", currentAge - 1)
       .order("year", { ascending: true })
 
-    // Get user's future entries for this branch
     const { data: futureEntries } = await supabase
       .from("events")
       .select("year, event_text")
@@ -50,6 +62,15 @@ export async function POST(request: NextRequest) {
       .eq("is_prediction", false)
       .gte("year", currentAge)
       .order("year", { ascending: true })
+
+    console.log(
+      "[v0] Found",
+      pastEvents?.length || 0,
+      "past events and",
+      futureEntries?.length || 0,
+      "future entries for branch",
+      branchIndex,
+    )
 
     // Build context for Gemini
     const pastContext =
@@ -65,7 +86,7 @@ export async function POST(request: NextRequest) {
     const prompt = `You are a thoughtful life coach helping someone explore their future possibilities.
 
 Life Path Theme: "${branchName}"
-Current Age: ${currentAge}
+Current Age: ${currentAge}${missionContext}
 
 Recent Past (Last 7 years):
 ${pastContext}
@@ -73,14 +94,15 @@ ${pastContext}
 User's Plans for This Path:
 ${futureContext}
 
-Based on the theme "${branchName}", the person's recent past, and their stated plans, generate 3-5 important milestone events that could realistically happen in their future on this life path. 
+Based on the theme "${branchName}", ${mission?.mission_text ? "their life mission, " : ""}the person's recent past, and their stated plans, generate 3-5 important milestone events that could realistically happen in their future on this life path. 
 
 Requirements:
 - Events should be between age ${currentAge} and 100
 - Each event should be a single concise sentence (max 15 words)
-- Events should align with the theme and build upon their past and stated plans
+- Events should align with the theme${mission?.mission_text ? ", mission," : ""} and build upon their past and stated plans
 - Be realistic and thoughtful, not overly optimistic or pessimistic
 - Spread events across different life stages (don't cluster them)
+- Do NOT predict events for years where the user has already entered their own plans
 
 Return ONLY a JSON array of objects with this exact format:
 [
@@ -89,6 +111,8 @@ Return ONLY a JSON array of objects with this exact format:
 ]
 
 Do not include any other text, explanations, or markdown formatting.`
+
+    console.log("[v0] Calling Gemini API for branch", branchIndex)
 
     // Call Gemini API
     const geminiResponse = await fetch(
@@ -136,6 +160,13 @@ Do not include any other text, explanations, or markdown formatting.`
       return NextResponse.json({ error: "Failed to parse predictions" }, { status: 500 })
     }
 
+    await supabase
+      .from("events")
+      .delete()
+      .eq("timeline_id", timelineId)
+      .eq("branch_index", branchIndex)
+      .eq("is_prediction", true)
+
     // Save predictions to database
     const predictionInserts = predictions.map((pred) => ({
       timeline_id: timelineId,
@@ -143,6 +174,7 @@ Do not include any other text, explanations, or markdown formatting.`
       year: pred.year,
       event_text: pred.event,
       is_prediction: true,
+      is_user_edited: false, // Mark as not user-edited
     }))
 
     const { data: insertedPredictions, error: insertError } = await supabase
@@ -154,6 +186,8 @@ Do not include any other text, explanations, or markdown formatting.`
       console.error("[v0] Error saving predictions:", insertError)
       return NextResponse.json({ error: "Failed to save predictions" }, { status: 500 })
     }
+
+    console.log("[v0] Successfully generated", insertedPredictions.length, "predictions for branch", branchIndex)
 
     return NextResponse.json({ predictions: insertedPredictions })
   } catch (error) {

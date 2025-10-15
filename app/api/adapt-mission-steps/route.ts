@@ -11,23 +11,38 @@ export async function POST(request: Request) {
 
     const supabase = await createClient()
 
+    const { data: currentSteps } = await supabase
+      .from("mission_steps")
+      .select("*")
+      .eq("mission_id", missionId)
+      .order("display_order")
+
+    if (!currentSteps) {
+      return Response.json({ error: "Could not fetch current steps" }, { status: 404 })
+    }
+
     // Find the edited step's position
-    const editedStep = allSteps.find((s: any) => s.id === editedStepId)
+    const editedStep = currentSteps.find((s: any) => s.id === editedStepId)
     if (!editedStep) {
       return Response.json({ error: "Edited step not found" }, { status: 404 })
     }
 
-    const editedStepIndex = allSteps.findIndex((s: any) => s.id === editedStepId)
+    const editedStepIndex = currentSteps.findIndex((s: any) => s.id === editedStepId)
 
-    // Get steps before and after (excluding user-edited ones)
-    const stepsBeforeEdited = allSteps.slice(0, editedStepIndex).filter((s: any) => !s.is_user_edited)
-    const stepsAfterEdited = allSteps.slice(editedStepIndex + 1).filter((s: any) => !s.is_user_edited)
+    const adaptableSteps = currentSteps.filter(
+      (s: any) => s.id !== editedStepId && s.is_ai_generated && !s.is_user_edited,
+    )
+
+    if (adaptableSteps.length === 0) {
+      console.log("[v0] No adaptable steps found")
+      return Response.json({ suggestions: [], message: "No AI-generated steps to adapt" })
+    }
 
     // Build context for Gemini
-    const allStepsText = allSteps
+    const allStepsText = currentSteps
       .map((s: any, i: number) => {
         const prefix = s.parent_step_id ? "  - " : `${i + 1}. `
-        const marker = s.id === editedStepId ? " [EDITED]" : s.is_user_edited ? " [USER]" : ""
+        const marker = s.id === editedStepId ? " [JUST EDITED]" : s.is_user_edited ? " [USER EDITED]" : " [AI]"
         return `${prefix}${s.step_text}${marker}`
       })
       .join("\n")
@@ -43,25 +58,25 @@ export async function POST(request: Request) {
 ${allStepsText}
 
 **Recent Edit:**
-Step ${editedStepIndex + 1}: "${editedStepText}" [EDITED]
+Step ${editedStepIndex + 1}: "${editedStepText}" [JUST EDITED]
 
 **Task:**
-The user edited step ${editedStepIndex + 1}. Analyze how this change affects the overall plan and suggest updates to OTHER steps (both before and after) to maintain coherence and alignment with the mission.
+The user edited step ${editedStepIndex + 1}. Analyze how this change affects the overall plan and suggest updates to OTHER AI-generated steps (marked with [AI]) to maintain coherence.
 
-IMPORTANT RULES:
-1. DO NOT modify steps marked with [USER] or [EDITED] - these are user-controlled
-2. ONLY suggest updates to AI-generated steps (unmarked ones)
-3. Focus on steps within 2 positions before and 3 positions after the edited step
-4. Ensure the flow makes logical sense: earlier steps should lead to later steps
+CRITICAL RULES:
+1. ONLY modify steps marked with [AI] - these are AI-generated and not user-edited
+2. NEVER modify steps marked with [USER EDITED] or [JUST EDITED]
+3. Focus on steps within 2-3 positions before and after the edited step
+4. Ensure logical flow: earlier steps should lead to later steps
 5. Keep suggestions specific and actionable
-6. Consider both main steps and substeps
+6. If a step no longer makes sense after the edit, suggest removing it (return empty string for newText)
 
-Return your response as a JSON array of suggested updates:
+Return your response as a JSON array:
 [
   {
-    "stepId": "<step id to update>",
-    "newText": "<updated step text>",
-    "reason": "<why this update makes sense>"
+    "stepId": "<step id from the list above>",
+    "newText": "<updated step text, or empty string to remove>",
+    "reason": "<brief explanation>"
   }
 ]
 
@@ -71,7 +86,7 @@ Only include steps that need updates. Return empty array [] if no changes needed
     const result = await model.generateContent(prompt)
     const responseText = result.response.text()
 
-    console.log("[v0] Gemini response:", responseText)
+    console.log("[v0] Gemini response:", responseText.substring(0, 300))
 
     // Parse JSON from response
     const jsonMatch = responseText.match(/\[[\s\S]*\]/)
@@ -82,20 +97,27 @@ Only include steps that need updates. Return empty array [] if no changes needed
 
     const suggestions = JSON.parse(jsonMatch[0])
 
-    // Update database: update the suggested steps
     if (suggestions.length > 0) {
       for (const suggestion of suggestions) {
-        await supabase
-          .from("mission_steps")
-          .update({
-            step_text: suggestion.newText,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", suggestion.stepId)
-          .eq("mission_id", missionId)
+        if (suggestion.newText === "") {
+          // Delete the step
+          await supabase.from("mission_steps").delete().eq("id", suggestion.stepId).eq("mission_id", missionId)
+          console.log("[v0] Deleted step", suggestion.stepId)
+        } else {
+          // Update the step
+          await supabase
+            .from("mission_steps")
+            .update({
+              step_text: suggestion.newText,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", suggestion.stepId)
+            .eq("mission_id", missionId)
+          console.log("[v0] Updated step", suggestion.stepId)
+        }
       }
 
-      console.log("[v0] Updated", suggestions.length, "steps")
+      console.log("[v0] Processed", suggestions.length, "step adaptations")
     }
 
     // Mark the edited step as user-edited
@@ -109,7 +131,7 @@ Only include steps that need updates. Return empty array [] if no changes needed
 
     return Response.json({
       suggestions,
-      message: suggestions.length > 0 ? `Updated ${suggestions.length} related steps` : "No updates needed",
+      message: suggestions.length > 0 ? `Adapted ${suggestions.length} related steps` : "No updates needed",
     })
   } catch (error) {
     console.error("[v0] Error adapting steps:", error)
