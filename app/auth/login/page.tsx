@@ -3,11 +3,21 @@
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+
+  // Check for error from callback
+  useEffect(() => {
+    const errorParam = searchParams.get("error")
+    if (errorParam) {
+      setError(decodeURIComponent(errorParam))
+    }
+  }, [searchParams])
 
   const handleGoogleLogin = async () => {
     const supabase = createClient()
@@ -15,6 +25,7 @@ export default function LoginPage() {
     setError(null)
 
     console.log("[v0] Starting Google OAuth login")
+    console.log("[v0] Redirect URL will be:", `${window.location.origin}/auth/callback`)
 
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -25,13 +36,13 @@ export default function LoginPage() {
       })
 
       if (error) {
-        console.log("[v0] OAuth error:", error)
+        console.error("[v0] OAuth error:", error)
         throw error
       }
 
       console.log("[v0] OAuth initiated successfully")
     } catch (error: unknown) {
-      console.log("[v0] Login error:", error)
+      console.error("[v0] Login error:", error)
       setError(error instanceof Error ? error.message : "An error occurred")
       setIsLoading(false)
     }
@@ -52,7 +63,14 @@ export default function LoginPage() {
             <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
               <p className="font-medium">{"Authentication Error"}</p>
               <p className="mt-1">{error}</p>
-              <p className="mt-2 text-xs">{"Make sure Google OAuth is enabled in your Supabase project settings."}</p>
+              <div className="mt-3 space-y-1 text-xs">
+                <p className="font-medium">{"Configuration checklist:"}</p>
+                <ul className="ml-4 list-disc space-y-1">
+                  <li>{"Google OAuth is enabled in Supabase Dashboard → Authentication → Providers"}</li>
+                  <li>{`Redirect URL is added: ${window.location.origin}/auth/callback`}</li>
+                  <li>{"Google Cloud Console has the same redirect URL in Authorized redirect URIs"}</li>
+                </ul>
+              </div>
             </div>
           )}
         </CardContent>

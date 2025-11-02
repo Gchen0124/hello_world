@@ -889,7 +889,10 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-12 w-12 animate-spin text-primary glow" />
+          <p className="text-sm text-muted-foreground">Loading your timeline...</p>
+        </div>
       </div>
     )
   }
@@ -897,10 +900,12 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
   if (currentAge === null) {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
-        <Card className="w-full max-w-md p-8">
-          <h1 className="mb-6 text-center font-serif text-3xl text-balance">{"Your Lifetime Timeline"}</h1>
-          <p className="mb-6 text-center text-muted-foreground text-pretty">
-            {"Enter your current age to begin mapping your life journey and exploring future possibilities."}
+        <Card className="glass-strong w-full max-w-md p-8 shadow-2xl">
+          <h1 className="mb-6 text-center font-sans text-4xl font-light tracking-tight gradient-text">
+            {"Your Lifetime Timeline"}
+          </h1>
+          <p className="mb-8 text-center text-sm text-muted-foreground/80 text-pretty leading-relaxed">
+            {"Enter your current age to begin mapping your life journey and exploring infinite possibilities."}
           </p>
           <div className="flex gap-3">
             <Input
@@ -911,9 +916,14 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
               value={ageInput}
               onChange={(e) => setAgeInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAgeSubmit()}
-              className="flex-1"
+              className="glass flex-1 border-white/20 focus:border-primary/50 focus:ring-primary/30"
             />
-            <Button onClick={handleAgeSubmit}>{"Start"}</Button>
+            <Button
+              onClick={handleAgeSubmit}
+              className="bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-opacity glow"
+            >
+              {"Start"}
+            </Button>
           </div>
         </Card>
       </div>
@@ -922,17 +932,24 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
 
   return (
     <div className="mx-auto max-w-7xl p-4 py-12 md:p-8">
-      <div className="mb-12 text-center">
-        <h1 className="mb-3 font-serif text-4xl text-balance md:text-5xl">{"Your Lifetime Timeline"}</h1>
-        <p className="text-lg text-muted-foreground">
+      <div className="mb-16 text-center">
+        <h1 className="mb-4 font-sans text-5xl font-light tracking-tight gradient-text md:text-6xl">
+          {"Your Lifetime Timeline"}
+        </h1>
+        <p className="text-lg text-muted-foreground/80">
           {"Current Age: "}
           <span className="font-semibold text-foreground">{currentAge}</span>
         </p>
-        <div className="mt-4 flex items-center justify-center gap-3">
-          <Button variant="outline" size="sm" onClick={() => setCurrentAge(null)}>
+        <div className="mt-6 flex items-center justify-center gap-3">
+          <Button variant="outline" size="sm" onClick={() => setCurrentAge(null)} className="glass border-white/20">
             {"Change Age"}
           </Button>
-          <Button size="sm" onClick={saveTimelineData} disabled={isSaving}>
+          <Button
+            size="sm"
+            onClick={saveTimelineData}
+            disabled={isSaving}
+            className="bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-opacity"
+          >
             {isSaving ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -946,44 +963,49 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
       </div>
 
       <div className="relative">
-        <div className="mb-8 flex justify-center">
+        <div className="mb-12 flex justify-center">
           <div className="relative w-full max-w-md">
-            <h2 className="mb-4 text-center font-serif text-2xl text-muted-foreground">{"The Past"}</h2>
-            <div className="relative border-l-2 border-primary pl-8">
-              {Array.from({ length: currentAge }, (_, i) => i).map((year) => (
-                <div key={`past-${year}`} className="relative mb-1">
-                  <div className="absolute -left-[37px] top-1 h-3 w-3 rounded-full border-2 border-primary bg-background" />
-                  <div className="flex items-center gap-3">
-                    <span className="min-w-[50px] font-mono text-sm text-muted-foreground">{`Y${year}`}</span>
-                    <input
-                      type="text"
-                      placeholder="event"
-                      value={pastEvents[year] || ""}
-                      onChange={(e) => updatePastEvent(year, e.target.value)}
-                      className="flex-1 border-b border-border bg-transparent px-1 py-0.5 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-primary"
-                    />
+            <h2 className="mb-6 text-center font-sans text-2xl font-light text-muted-foreground/60">{"The Past"}</h2>
+            <div className="glass-subtle relative rounded-2xl p-6">
+              <div className="relative border-l-2 border-primary/50 pl-8">
+                {Array.from({ length: currentAge }, (_, i) => i).map((year) => (
+                  <div key={`past-${year}`} className="relative mb-1">
+                    <div className="absolute -left-[37px] top-1 h-3 w-3 rounded-full border-2 border-primary bg-background glow" />
+                    <div className="flex items-center gap-3">
+                      <span className="min-w-[50px] font-mono text-sm text-muted-foreground/60">{`Y${year}`}</span>
+                      <input
+                        type="text"
+                        placeholder="event"
+                        value={pastEvents[year] || ""}
+                        onChange={(e) => updatePastEvent(year, e.target.value)}
+                        className="flex-1 border-b border-border/30 bg-transparent px-1 py-0.5 text-sm outline-none placeholder:text-muted-foreground/30 focus:border-primary/50 transition-colors"
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="my-8 flex items-center gap-4">
-          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-primary to-transparent" />
-          <div className="rounded-full bg-primary px-6 py-2 font-semibold text-primary-foreground">
+        <div className="my-12 flex items-center gap-4">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-primary/50 to-primary" />
+          <div className="glass-strong rounded-full px-8 py-3 font-semibold text-foreground shadow-lg glow-strong text-primary">
             {`Y${currentAge} - NOW`}
           </div>
-          <div className="h-px flex-1 bg-gradient-to-r from-primary via-primary to-transparent" />
+          <div className="h-px flex-1 bg-gradient-to-r from-primary via-primary/50 to-transparent" />
         </div>
 
-        <div className="mt-8">
-          <h2 className="mb-6 text-center font-serif text-2xl text-muted-foreground">{"Future Possibilities"}</h2>
+        <div className="mt-12">
+          <h2 className="mb-8 text-center font-sans text-3xl font-light text-muted-foreground/60">
+            {"Future Possibilities"}
+          </h2>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {[0, 1, 2, 3, 4].map((branchIndex) => (
               <div key={`branch-${branchIndex}`} className="relative">
                 <div
-                  className={`sticky top-4 z-10 mb-3 rounded-lg ${BRANCH_BG_COLORS[branchIndex]} border-2 ${BRANCH_COLORS[branchIndex]} px-3 py-1.5`}
+                  className={`glass-strong sticky top-4 z-10 mb-4 rounded-xl border-2 ${BRANCH_COLORS[branchIndex]} px-4 py-2 shadow-lg glow`}
+                  style={{ borderColor: `var(--color-chart-${branchIndex + 1})` }}
                 >
                   <input
                     type="text"
@@ -993,13 +1015,14 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                     placeholder={`Possibility ${String.fromCharCode(65 + branchIndex)}`}
                   />
                 </div>
-                <div className="mb-3 flex justify-center">
+
+                <div className="mb-4 flex justify-center">
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => generatePredictions(branchIndex)}
                     disabled={generatingBranch !== null}
-                    className="text-xs"
+                    className="glass border-white/20 text-xs hover:border-primary/50 transition-all"
                   >
                     {generatingBranch === branchIndex ? (
                       <>
@@ -1014,68 +1037,70 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                     )}
                   </Button>
                 </div>
+
                 {adaptingBranch === branchIndex && (
-                  <div className="mb-2 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" />
+                  <div className="mb-3 flex items-center justify-center gap-2 text-xs text-primary/80">
+                    <Loader2 className="h-3 w-3 animate-spin glow" />
                     <span>{"AI adapting predictions..."}</span>
                   </div>
                 )}
-                <div className={`relative border-l-2 ${BRANCH_COLORS[branchIndex]} pl-6`}>
-                  {Array.from({ length: 100 - currentAge! + 1 }, (_, i) => currentAge! + i).map((year) => {
-                    const prediction = predictions[branchIndex].find((p) => p.year === year)
 
-                    return (
-                      <div key={`branch-${branchIndex}-year-${year}`} className="relative mb-1">
-                        <div
-                          className={`absolute -left-[25px] top-1 h-2 w-2 rounded-full border-2 ${BRANCH_COLORS[branchIndex]} bg-background`}
-                        />
-                        <div className="flex items-center gap-2">
-                          <span className="min-w-[45px] font-mono text-xs text-muted-foreground">{`Y${year}`}</span>
-                          {prediction ? (
-                            <div className="group relative flex flex-1 items-center gap-1">
-                              <div
-                                className={`flex-1 animate-pulse rounded border ${BRANCH_COLORS[branchIndex]} ${BRANCH_BG_COLORS[branchIndex]} px-2 py-1 text-xs italic ${BRANCH_TEXT_COLORS[branchIndex]}`}
-                              >
-                                {prediction.event_text}
+                <div className="glass-subtle rounded-2xl p-4">
+                  <div className={`relative border-l-2 ${BRANCH_COLORS[branchIndex]} pl-6`}>
+                    {Array.from({ length: 100 - currentAge! + 1 }, (_, i) => currentAge! + i).map((year) => {
+                      const prediction = predictions[branchIndex].find((p) => p.year === year)
+
+                      return (
+                        <div key={`branch-${branchIndex}-year-${year}`} className="relative mb-1">
+                          <div
+                            className={`absolute -left-[25px] top-1 h-2 w-2 rounded-full border-2 ${BRANCH_COLORS[branchIndex]} bg-background`}
+                          />
+                          <div className="flex items-center gap-2">
+                            <span className="min-w-[45px] font-mono text-xs text-muted-foreground/60">{`Y${year}`}</span>
+                            {prediction ? (
+                              <div className="group relative flex flex-1 items-center gap-1">
+                                <div
+                                  className={`flex-1 animate-pulse rounded-lg border ${BRANCH_COLORS[branchIndex]} glass-subtle px-2 py-1 text-xs italic ${BRANCH_TEXT_COLORS[branchIndex]} glow`}
+                                >
+                                  {prediction.event_text}
+                                </div>
+                                <button
+                                  onClick={() => deletePrediction(prediction.id, branchIndex)}
+                                  className="opacity-0 transition-opacity group-hover:opacity-100"
+                                  title="Delete prediction"
+                                >
+                                  <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                </button>
                               </div>
-                              <button
-                                onClick={() => deletePrediction(prediction.id, branchIndex)}
-                                className="opacity-0 transition-opacity group-hover:opacity-100"
-                                title="Delete prediction"
-                              >
-                                <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                              </button>
-                            </div>
-                          ) : (
-                            <input
-                              type="text"
-                              placeholder="event"
-                              value={futureEvents[branchIndex][year] || ""}
-                              onChange={(e) => updateFutureEvent(branchIndex, year, e.target.value)}
-                              onBlur={(e) => handleEventBlur(branchIndex, year, e.target.value)}
-                              className="flex-1 border-b border-border bg-transparent px-1 py-0.5 text-xs outline-none placeholder:text-muted-foreground/50 focus:border-primary"
-                            />
-                          )}
+                            ) : (
+                              <input
+                                type="text"
+                                placeholder="event"
+                                value={futureEvents[branchIndex][year] || ""}
+                                onChange={(e) => updateFutureEvent(branchIndex, year, e.target.value)}
+                                onBlur={(e) => handleEventBlur(branchIndex, year, e.target.value)}
+                                className="flex-1 border-b border-border/30 bg-transparent px-1 py-0.5 text-xs outline-none placeholder:text-muted-foreground/30 focus:border-primary/50 transition-colors"
+                              />
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                  </div>
                 </div>
 
                 <div className="mt-6 space-y-4">
                   <div className="relative">
-                    <div className="absolute -left-6 top-0 h-full w-px bg-gradient-to-b from-primary to-transparent" />
-                    <div
-                      className={`rounded-lg border-2 ${BRANCH_COLORS[branchIndex]} bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-4 shadow-lg`}
-                    >
-                      <h3 className="mb-2 text-center font-serif text-sm font-semibold text-amber-600">
+                    <div className="absolute -left-6 top-0 h-full w-px bg-gradient-to-b from-primary/50 to-transparent" />
+                    <div className="glass-strong rounded-2xl border-2 border-amber-500/30 p-6 shadow-2xl glow-strong text-amber-400">
+                      <h3 className="mb-3 text-center font-sans text-sm font-semibold text-amber-400">
                         {"Ultimate Life Mission"}
                       </h3>
                       <Textarea
-                        placeholder="What is your ultimate mission for this life path? (up to 1000 words)"
+                        placeholder="What is your ultimate mission for this life path?"
                         value={missions[branchIndex]?.mission_text || ""}
                         onChange={(e) => updateMissionText(branchIndex, e.target.value)}
-                        className="min-h-[100px] resize-none border-amber-300 bg-white/50 text-sm placeholder:text-muted-foreground/60 focus:border-amber-500 focus:ring-amber-500"
+                        className="glass min-h-[120px] resize-none border-amber-500/30 text-sm placeholder:text-muted-foreground/40 focus:border-amber-500/50 focus:ring-amber-500/30"
                         maxLength={5000}
                       />
                     </div>
@@ -1083,10 +1108,15 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
 
                   {missions[branchIndex]?.mission_text && (
                     <>
-                      <div className="space-y-2">
+                      <div className="glass-subtle space-y-2 rounded-xl p-4">
                         <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-semibold text-muted-foreground">{"Success Metrics"}</h4>
-                          <Button size="sm" variant="ghost" onClick={() => addMetric(branchIndex)} className="h-6 px-2">
+                          <h4 className="text-xs font-semibold text-muted-foreground/80">{"Success Metrics"}</h4>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => addMetric(branchIndex)}
+                            className="h-6 px-2 hover:bg-white/10"
+                          >
                             <Plus className="h-3 w-3" />
                           </Button>
                         </div>
@@ -1097,21 +1127,21 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                               placeholder="Success metric..."
                               value={metric.metric_text}
                               onChange={(e) => updateMetric(branchIndex, metric.id, e.target.value)}
-                              className="flex-1 rounded border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
+                              className="glass flex-1 rounded-lg border-white/10 px-3 py-1.5 text-xs outline-none focus:border-primary/50"
                             />
                             <button onClick={() => deleteMetric(branchIndex, metric.id)}>
-                              <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                              <X className="h-3 w-3 text-muted-foreground hover:text-destructive transition-colors" />
                             </button>
                           </div>
                         ))}
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="glass-subtle space-y-3 rounded-xl p-4">
                         <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-semibold text-muted-foreground">{"Key Steps"}</h4>
+                          <h4 className="text-xs font-semibold text-muted-foreground/80">{"Key Steps"}</h4>
                           {adaptingStepBranch === branchIndex ? (
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <Loader2 className="h-3 w-3 animate-spin" />
+                            <div className="flex items-center gap-1 text-xs text-primary/80">
+                              <Loader2 className="h-3 w-3 animate-spin glow" />
                               <span>{"Adapting..."}</span>
                             </div>
                           ) : (
@@ -1120,7 +1150,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                               variant="outline"
                               onClick={() => generateMissionSteps(branchIndex)}
                               disabled={generatingStepsBranch !== null}
-                              className="h-6 px-2 text-xs"
+                              className="glass h-6 border-white/20 px-2 text-xs hover:border-primary/50"
                             >
                               {generatingStepsBranch === branchIndex ? (
                                 <>
@@ -1137,19 +1167,19 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                           )}
                         </div>
 
-                        <div className="space-y-1">
+                        <div className="space-y-2">
                           {missions[branchIndex]?.steps
                             .filter((s) => !s.parent_step_id)
                             .map((step) => (
-                              <div key={step.id} className="space-y-1">
+                              <div key={step.id} className="space-y-2">
                                 <div
                                   draggable
                                   onDragStart={() => handleDragStart(branchIndex, step.id)}
                                   onDragOver={handleDragOver}
                                   onDrop={() => handleDrop(branchIndex, step.id)}
-                                  className="group flex items-start gap-2 rounded border border-border bg-background p-2 hover:border-primary"
+                                  className="glass group flex items-start gap-2 rounded-lg border-white/10 p-3 hover:border-primary/30 transition-all"
                                 >
-                                  <GripVertical className="mt-0.5 h-3 w-3 flex-shrink-0 cursor-move text-muted-foreground" />
+                                  <GripVertical className="mt-0.5 h-3 w-3 flex-shrink-0 cursor-move text-muted-foreground/60" />
                                   <input
                                     type="text"
                                     value={step.step_text}
@@ -1158,7 +1188,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                                     className="flex-1 bg-transparent text-xs outline-none"
                                   />
                                   <button onClick={() => deleteStep(branchIndex, step.id)} className="flex-shrink-0">
-                                    <Trash2 className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive" />
+                                    <Trash2 className="h-3 w-3 text-muted-foreground/60 opacity-0 transition-all group-hover:opacity-100 hover:text-destructive" />
                                   </button>
                                 </div>
 
@@ -1167,9 +1197,9 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                                   .map((substep) => (
                                     <div
                                       key={substep.id}
-                                      className="group ml-6 flex items-start gap-2 rounded border border-border/50 bg-muted/30 p-2 hover:border-primary/50"
+                                      className="glass-subtle group ml-6 flex items-start gap-2 rounded-lg border-white/5 p-2 hover:border-primary/20 transition-all"
                                     >
-                                      <div className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-muted-foreground" />
+                                      <div className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-muted-foreground/60" />
                                       <input
                                         type="text"
                                         value={substep.step_text}
@@ -1181,7 +1211,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                                         onClick={() => deleteStep(branchIndex, substep.id)}
                                         className="flex-shrink-0"
                                       >
-                                        <Trash2 className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive" />
+                                        <Trash2 className="h-3 w-3 text-muted-foreground/60 opacity-0 transition-all group-hover:opacity-100 hover:text-destructive" />
                                       </button>
                                     </div>
                                   ))}

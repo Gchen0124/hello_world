@@ -1,20 +1,8 @@
-import { createClient } from "@/lib/supabase/server"
-import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
 
-export default async function Home() {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (user) {
-    redirect("/timeline")
-  }
-
+export default function Home() {
   return (
     <div className="flex min-h-screen items-center justify-center p-6 bg-gradient-to-b from-background to-muted/20">
       <Card className="w-full max-w-md">
@@ -24,10 +12,15 @@ export default async function Home() {
             {"Track your past, explore your future. Visualize 100 years of possibilities with AI-powered insights."}
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Link href="/auth/login">
+        <CardContent className="space-y-3">
+          <Link href="/timeline" className="block">
             <Button className="w-full" size="lg">
               {"Get Started"}
+            </Button>
+          </Link>
+          <Link href="/auth/login" className="block">
+            <Button variant="outline" className="w-full bg-transparent" size="lg">
+              {"Sign In"}
             </Button>
           </Link>
         </CardContent>
