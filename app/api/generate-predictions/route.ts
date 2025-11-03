@@ -54,21 +54,25 @@ export async function POST(request: NextRequest) {
       .lte("year", currentAge - 1)
       .order("year", { ascending: true })
 
-    const { data: futureEntries } = await supabase
+    const { data: allExistingEvents } = await supabase
       .from("events")
-      .select("year, event_text")
+      .select("year, event_text, is_prediction, is_user_edited")
       .eq("timeline_id", timelineId)
       .eq("branch_index", branchIndex)
-      .eq("is_prediction", false)
       .gte("year", currentAge)
       .order("year", { ascending: true })
+
+    const userEnteredEvents = allExistingEvents?.filter((e) => !e.is_prediction || e.is_user_edited) || []
+    const filledYears = new Set(allExistingEvents?.map((e) => e.year) || [])
 
     console.log(
       "[v0] Found",
       pastEvents?.length || 0,
-      "past events and",
-      futureEntries?.length || 0,
-      "future entries for branch",
+      "past events,",
+      userEnteredEvents.length,
+      "user-entered future events, and",
+      filledYears.size,
+      "total filled years for branch",
       branchIndex,
     )
 
@@ -79,8 +83,8 @@ export async function POST(request: NextRequest) {
         : "No past events recorded"
 
     const futureContext =
-      futureEntries && futureEntries.length > 0
-        ? futureEntries.map((e) => `Year ${e.year}: ${e.event_text}`).join("\n")
+      userEnteredEvents.length > 0
+        ? userEnteredEvents.map((e) => `Year ${e.year}: ${e.event_text}`).join("\n")
         : "No future plans entered yet"
 
     const prompt = `You are a thoughtful life coach helping someone explore their future possibilities.
@@ -102,7 +106,8 @@ Requirements:
 - Events should align with the theme${mission?.mission_text ? ", mission," : ""} and build upon their past and stated plans
 - Be realistic and thoughtful, not overly optimistic or pessimistic
 - Spread events across different life stages (don't cluster them)
-- Do NOT predict events for years where the user has already entered their own plans
+- IMPORTANT: Do NOT predict events for these years that already have content: ${Array.from(filledYears).join(", ")}
+- Consider ALL the user's entered plans when generating predictions - they provide important context about this life path
 
 Return ONLY a JSON array of objects with this exact format:
 [
@@ -113,6 +118,7 @@ Return ONLY a JSON array of objects with this exact format:
 Do not include any other text, explanations, or markdown formatting.`
 
     console.log("[v0] Calling Gemini API for branch", branchIndex)
+    console.log("[v0] Filled years to avoid:", Array.from(filledYears).join(", "))
 
     const geminiApiKey = process.env.Gemini_API
     if (!geminiApiKey) {
@@ -182,15 +188,20 @@ Do not include any other text, explanations, or markdown formatting.`
       .eq("timeline_id", timelineId)
       .eq("branch_index", branchIndex)
       .eq("is_prediction", true)
+      .eq("is_user_edited", false)
+
+    const validPredictions = predictions.filter((pred) => !filledYears.has(pred.year))
+
+    console.log("[v0] Generated", predictions.length, "predictions,", validPredictions.length, "are for blank years")
 
     // Save predictions to database
-    const predictionInserts = predictions.map((pred) => ({
+    const predictionInserts = validPredictions.map((pred) => ({
       timeline_id: timelineId,
       branch_index: branchIndex,
       year: pred.year,
       event_text: pred.event,
       is_prediction: true,
-      is_user_edited: false, // Mark as not user-edited
+      is_user_edited: false,
     }))
 
     const { data: insertedPredictions, error: insertError } = await supabase
