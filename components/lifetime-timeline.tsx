@@ -467,6 +467,87 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
     })
   }
 
+  const savePastEvent = async (year: number, eventText: string) => {
+    if (!timelineId) return
+
+    try {
+      console.log("[v0] Auto-saving past event:", year, eventText.substring(0, 30))
+
+      if (eventText.trim() === "") {
+        // Delete if empty
+        await supabase.from("events").delete().eq("timeline_id", timelineId).eq("year", year).is("branch_index", null)
+      } else {
+        // Upsert if has content
+        await supabase.from("events").upsert({
+          timeline_id: timelineId,
+          branch_index: null,
+          year: year,
+          event_text: eventText,
+          is_prediction: false,
+          is_user_edited: true,
+          last_edited_at: new Date().toISOString(),
+        })
+      }
+
+      console.log("[v0] Past event saved successfully")
+    } catch (error) {
+      console.error("[v0] Error saving past event:", error)
+    }
+  }
+
+  const saveMissionText = async (branchIndex: number) => {
+    const mission = missions[branchIndex]
+    if (!timelineId || !mission) return
+
+    try {
+      console.log("[v0] Auto-saving mission text for branch", branchIndex)
+
+      await supabase.from("life_missions").upsert(
+        {
+          id: mission.id,
+          timeline_id: timelineId,
+          branch_index: branchIndex,
+          mission_text: mission.mission_text,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "timeline_id,branch_index" },
+      )
+
+      console.log("[v0] Mission text saved successfully")
+    } catch (error) {
+      console.error("[v0] Error saving mission text:", error)
+    }
+  }
+
+  const saveMetric = async (branchIndex: number, metricId: string) => {
+    const mission = missions[branchIndex]
+    if (!mission) return
+
+    try {
+      console.log("[v0] Auto-saving metric:", metricId)
+
+      const metric = mission.metrics.find((m) => m.id === metricId)
+      if (!metric) return
+
+      if (metric.metric_text.trim() === "") {
+        // Delete if empty
+        await supabase.from("success_metrics").delete().eq("id", metricId)
+      } else {
+        // Upsert if has content
+        await supabase.from("success_metrics").upsert({
+          id: metricId,
+          mission_id: mission.id,
+          metric_text: metric.metric_text,
+          display_order: metric.display_order,
+        })
+      }
+
+      console.log("[v0] Metric saved successfully")
+    } catch (error) {
+      console.error("[v0] Error saving metric:", error)
+    }
+  }
+
   const generateMissionSteps = async (branchIndex: number) => {
     const mission = missions[branchIndex]
     if (!mission || !mission.mission_text || !timelineId) {
@@ -1020,6 +1101,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                         placeholder="event"
                         value={pastEvents[year] || ""}
                         onChange={(e) => updatePastEvent(year, e.target.value)}
+                        onBlur={(e) => savePastEvent(year, e.target.value)}
                         className="flex-1 border-b border-border/30 bg-transparent px-1 py-0.5 text-sm outline-none placeholder:text-muted-foreground/30 focus:border-primary/50 transition-colors"
                       />
                     </div>
@@ -1143,6 +1225,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                         placeholder="What is your ultimate mission for this life path?"
                         value={missions[branchIndex]?.mission_text || ""}
                         onChange={(e) => updateMissionText(branchIndex, e.target.value)}
+                        onBlur={() => saveMissionText(branchIndex)}
                         className="glass min-h-[120px] resize-none border-amber-500/30 text-sm placeholder:text-muted-foreground/40 focus:border-amber-500/50 focus:ring-amber-500/30"
                         maxLength={5000}
                       />
@@ -1170,6 +1253,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                               placeholder="Success metric..."
                               value={metric.metric_text}
                               onChange={(e) => updateMetric(branchIndex, metric.id, e.target.value)}
+                              onBlur={() => saveMetric(branchIndex, metric.id)}
                               className="glass flex-1 rounded-lg border-white/10 px-3 py-1.5 text-xs outline-none focus:border-primary/50"
                             />
                             <button onClick={() => deleteMetric(branchIndex, metric.id)}>
