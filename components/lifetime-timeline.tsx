@@ -957,6 +957,23 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
 
   return (
     <div className="mx-auto max-w-7xl p-4 py-12 md:p-8">
+      {/* ADDED HEADER WITH LOGOUT BUTTON */}
+      <div className="mb-8 flex items-center justify-between">
+        <div className="flex-1" />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={async () => {
+            const supabase = createClient()
+            await supabase.auth.signOut()
+            window.location.href = "/auth/login"
+          }}
+          className="glass border-white/20 hover:border-destructive/50 hover:text-destructive transition-all"
+        >
+          {"Logout"}
+        </Button>
+      </div>
+
       <div className="mb-16 text-center">
         <h1 className="mb-4 font-sans text-5xl font-light tracking-tight gradient-text md:text-6xl">
           {"Your Lifetime Timeline"}
