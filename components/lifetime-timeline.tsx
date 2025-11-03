@@ -882,6 +882,31 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
     }))
   }
 
+  const saveBranchName = async (branchIndex: number, name: string) => {
+    if (!timelineId || !name.trim()) return
+
+    try {
+      console.log("[v0] Saving branch name:", branchIndex, name)
+
+      const { error } = await supabase.from("possibility_branches").upsert(
+        {
+          timeline_id: timelineId,
+          branch_index: branchIndex,
+          branch_name: name,
+        },
+        { onConflict: "timeline_id,branch_index" },
+      )
+
+      if (error) {
+        console.error("[v0] Error saving branch name:", error)
+      } else {
+        console.log("[v0] Branch name saved successfully")
+      }
+    } catch (error) {
+      console.error("[v0] Error in saveBranchName:", error)
+    }
+  }
+
   const updateBranchName = (branchIndex: number, name: string) => {
     setBranchNames((prev) => ({ ...prev, [branchIndex]: name }))
   }
@@ -1011,6 +1036,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                     type="text"
                     value={branchNames[branchIndex]}
                     onChange={(e) => updateBranchName(branchIndex, e.target.value)}
+                    onBlur={(e) => saveBranchName(branchIndex, e.target.value)}
                     className="w-full bg-transparent text-center text-sm font-semibold outline-none"
                     placeholder={`Possibility ${String.fromCharCode(65 + branchIndex)}`}
                   />
