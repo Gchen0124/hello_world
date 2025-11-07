@@ -9,6 +9,9 @@ import { Card } from "@/components/ui/card"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2, Sparkles, X, Plus, GripVertical, Trash2 } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
+import { useLanguage } from "@/lib/i18n/language-context"
+import { getTranslation } from "@/lib/i18n/translations"
+import { LanguageSelector } from "@/components/language-selector"
 
 type EventData = {
   [year: number]: string
@@ -105,6 +108,10 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
   const [adaptingStepBranch, setAdaptingStepBranch] = useState<number | null>(null)
 
   const supabase = createClient()
+
+  // ADDED LANGUAGE CONTEXT
+  const { language } = useLanguage()
+  const t = (key: Parameters<typeof getTranslation>[1]) => getTranslation(language, key)
 
   useEffect(() => {
     loadTimelineData()
@@ -468,11 +475,11 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
   }
 
   const savePastEvent = async (year: number, eventText: string) => {
-    if (!timelineId) return
+    if (!timelineId || !eventText.trim() || year < currentAge!) return
+
+    console.log("[v0] Auto-saving past event:", year, eventText.substring(0, 30))
 
     try {
-      console.log("[v0] Auto-saving past event:", year, eventText.substring(0, 30))
-
       if (eventText.trim() === "") {
         // Delete if empty
         await supabase.from("events").delete().eq("timeline_id", timelineId).eq("year", year).is("branch_index", null)
@@ -997,7 +1004,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
       <div className="flex min-h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-12 w-12 animate-spin text-primary glow" />
-          <p className="text-sm text-muted-foreground">Loading your timeline...</p>
+          <p className="text-sm text-muted-foreground">{t("loadingTimeline")}</p>
         </div>
       </div>
     )
@@ -1008,17 +1015,17 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
       <div className="flex min-h-screen items-center justify-center p-4">
         <Card className="glass-strong w-full max-w-md p-8 shadow-2xl">
           <h1 className="mb-6 text-center font-sans text-4xl font-light tracking-tight gradient-text">
-            {"Your Lifetime Timeline"}
+            {t("enterAge")}
           </h1>
           <p className="mb-8 text-center text-sm text-muted-foreground/80 text-pretty leading-relaxed">
-            {"Enter your current age to begin mapping your life journey and exploring infinite possibilities."}
+            {t("enterAgeDesc")}
           </p>
           <div className="flex gap-3">
             <Input
               type="number"
               min="0"
               max="100"
-              placeholder="Enter your age (0-100)"
+              placeholder={t("enterAgePlaceholder")}
               value={ageInput}
               onChange={(e) => setAgeInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAgeSubmit()}
@@ -1028,7 +1035,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
               onClick={handleAgeSubmit}
               className="bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-opacity glow"
             >
-              {"Start"}
+              {t("start")}
             </Button>
           </div>
         </Card>
@@ -1040,7 +1047,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
     <div className="mx-auto max-w-7xl p-4 py-12 md:p-8">
       {/* ADDED HEADER WITH LOGOUT BUTTON */}
       <div className="mb-8 flex items-center justify-between">
-        <div className="flex-1" />
+        <LanguageSelector />
         <Button
           variant="outline"
           size="sm"
@@ -1051,21 +1058,21 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
           }}
           className="glass border-white/20 hover:border-destructive/50 hover:text-destructive transition-all"
         >
-          {"Logout"}
+          {t("logout")}
         </Button>
       </div>
 
       <div className="mb-16 text-center">
         <h1 className="mb-4 font-sans text-5xl font-light tracking-tight gradient-text md:text-6xl">
-          {"Your Lifetime Timeline"}
+          {t("yourLifetimeTimeline")}
         </h1>
         <p className="text-lg text-muted-foreground/80">
-          {"Current Age: "}
+          {t("currentAge")}
           <span className="font-semibold text-foreground">{currentAge}</span>
         </p>
         <div className="mt-6 flex items-center justify-center gap-3">
           <Button variant="outline" size="sm" onClick={() => setCurrentAge(null)} className="glass border-white/20">
-            {"Change Age"}
+            {t("changeAge")}
           </Button>
           <Button
             size="sm"
@@ -1076,10 +1083,10 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
             {isSaving ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {"Saving..."}
+                {t("saving")}
               </>
             ) : (
-              "Save Timeline"
+              t("saveTimeline")
             )}
           </Button>
         </div>
@@ -1088,17 +1095,17 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
       <div className="relative">
         <div className="mb-12 flex justify-center">
           <div className="relative w-full max-w-md">
-            <h2 className="mb-6 text-center font-sans text-2xl font-light text-muted-foreground/60">{"The Past"}</h2>
+            <h2 className="mb-6 text-center font-sans text-2xl font-light text-muted-foreground/60">{t("thePast")}</h2>
             <div className="glass-subtle relative rounded-2xl p-6">
               <div className="relative border-l-2 border-primary/50 pl-8">
                 {Array.from({ length: currentAge }, (_, i) => i).map((year) => (
                   <div key={`past-${year}`} className="relative mb-1">
                     <div className="absolute -left-[37px] top-1 h-3 w-3 rounded-full border-2 border-primary bg-background glow" />
                     <div className="flex items-center gap-3">
-                      <span className="min-w-[50px] font-mono text-sm text-muted-foreground/60">{`Y${year}`}</span>
+                      <span className="min-w-[50px] font-mono text-sm text-muted-foreground/60">{`${t("year")}${year}`}</span>
                       <input
                         type="text"
-                        placeholder="event"
+                        placeholder={t("eventPlaceholder")}
                         value={pastEvents[year] || ""}
                         onChange={(e) => updatePastEvent(year, e.target.value)}
                         onBlur={(e) => savePastEvent(year, e.target.value)}
@@ -1115,14 +1122,14 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
         <div className="my-12 flex items-center gap-4">
           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-primary/50 to-primary" />
           <div className="glass-strong rounded-full px-8 py-3 font-semibold text-foreground shadow-lg glow-strong text-primary">
-            {`Y${currentAge} - NOW`}
+            {`${t("year")}${currentAge} - ${t("now")}`}
           </div>
           <div className="h-px flex-1 bg-gradient-to-r from-primary via-primary/50 to-transparent" />
         </div>
 
         <div className="mt-12">
           <h2 className="mb-8 text-center font-sans text-3xl font-light text-muted-foreground/60">
-            {"Future Possibilities"}
+            {t("futurePossibilities")}
           </h2>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {[0, 1, 2, 3, 4].map((branchIndex) => (
@@ -1152,12 +1159,12 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                     {generatingBranch === branchIndex ? (
                       <>
                         <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                        {"Predicting..."}
+                        {t("predicting")}
                       </>
                     ) : (
                       <>
                         <Sparkles className="mr-1 h-3 w-3" />
-                        {"AI Predict"}
+                        {t("aiPredict")}
                       </>
                     )}
                   </Button>
@@ -1166,7 +1173,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                 {adaptingBranch === branchIndex && (
                   <div className="mb-3 flex items-center justify-center gap-2 text-xs text-primary/80">
                     <Loader2 className="h-3 w-3 animate-spin glow" />
-                    <span>{"AI adapting predictions..."}</span>
+                    <span>{t("aiAdaptingPredictions")}</span>
                   </div>
                 )}
 
@@ -1181,7 +1188,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                             className={`absolute -left-[25px] top-1 h-2 w-2 rounded-full border-2 ${BRANCH_COLORS[branchIndex]} bg-background`}
                           />
                           <div className="flex items-center gap-2">
-                            <span className="min-w-[45px] font-mono text-xs text-muted-foreground/60">{`Y${year}`}</span>
+                            <span className="min-w-[45px] font-mono text-xs text-muted-foreground/60">{`${t("year")}${year}`}</span>
                             {prediction ? (
                               <div className="group relative flex flex-1 items-center gap-1">
                                 <div
@@ -1200,7 +1207,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                             ) : (
                               <input
                                 type="text"
-                                placeholder="event"
+                                placeholder={t("eventPlaceholder")}
                                 value={futureEvents[branchIndex][year] || ""}
                                 onChange={(e) => updateFutureEvent(branchIndex, year, e.target.value)}
                                 onBlur={(e) => handleEventBlur(branchIndex, year, e.target.value)}
@@ -1219,10 +1226,10 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                     <div className="absolute -left-6 top-0 h-full w-px bg-gradient-to-b from-primary/50 to-transparent" />
                     <div className="glass-strong rounded-2xl border-2 border-amber-500/30 p-6 shadow-2xl glow-strong text-amber-400">
                       <h3 className="mb-3 text-center font-sans text-sm font-semibold text-amber-400">
-                        {"Ultimate Life Mission"}
+                        {t("ultimateLifeMission")}
                       </h3>
                       <Textarea
-                        placeholder="What is your ultimate mission for this life path?"
+                        placeholder={t("ultimateLifeMissionPlaceholder")}
                         value={missions[branchIndex]?.mission_text || ""}
                         onChange={(e) => updateMissionText(branchIndex, e.target.value)}
                         onBlur={() => saveMissionText(branchIndex)}
@@ -1236,7 +1243,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                     <>
                       <div className="glass-subtle space-y-2 rounded-xl p-4">
                         <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-semibold text-muted-foreground/80">{"Success Metrics"}</h4>
+                          <h4 className="text-xs font-semibold text-muted-foreground/80">{t("successMetrics")}</h4>
                           <Button
                             size="sm"
                             variant="ghost"
@@ -1250,7 +1257,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                           <div key={metric.id} className="flex items-center gap-2">
                             <input
                               type="text"
-                              placeholder="Success metric..."
+                              placeholder={t("successMetricPlaceholder")}
                               value={metric.metric_text}
                               onChange={(e) => updateMetric(branchIndex, metric.id, e.target.value)}
                               onBlur={() => saveMetric(branchIndex, metric.id)}
@@ -1265,11 +1272,11 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
 
                       <div className="glass-subtle space-y-3 rounded-xl p-4">
                         <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-semibold text-muted-foreground/80">{"Key Steps"}</h4>
+                          <h4 className="text-xs font-semibold text-muted-foreground/80">{t("keySteps")}</h4>
                           {adaptingStepBranch === branchIndex ? (
                             <div className="flex items-center gap-1 text-xs text-primary/80">
                               <Loader2 className="h-3 w-3 animate-spin glow" />
-                              <span>{"Adapting..."}</span>
+                              <span>{t("adaptingSteps")}</span>
                             </div>
                           ) : (
                             <Button
@@ -1282,12 +1289,12 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
                               {generatingStepsBranch === branchIndex ? (
                                 <>
                                   <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                  {"Generating..."}
+                                  {t("generatingSteps")}
                                 </>
                               ) : (
                                 <>
                                   <Sparkles className="mr-1 h-3 w-3" />
-                                  {"Generate Steps"}
+                                  {t("generateSteps")}
                                 </>
                               )}
                             </Button>

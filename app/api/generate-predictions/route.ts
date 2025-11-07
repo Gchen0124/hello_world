@@ -16,9 +16,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { timelineId, branchIndex, branchName, currentAge } = body
+    const { timelineId, branchIndex, branchName, currentAge, userLanguage } = body
 
     console.log("[v0] Generating predictions for branch", branchIndex, "timeline", timelineId)
+    console.log("[v0] User language detected:", userLanguage || "not specified")
 
     // Verify timeline belongs to user
     const { data: timeline, error: timelineError } = await supabase
@@ -87,6 +88,65 @@ export async function POST(request: NextRequest) {
         ? userEnteredEvents.map((e) => `Year ${e.year}: ${e.event_text}`).join("\n")
         : "No future plans entered yet"
 
+    const detectLanguagePrompt = `Analyze the following text and detect its primary language. Return ONLY the ISO 639-1 language code (e.g., "en", "es", "zh", "fr", "de", "ja", "ko", "pt", "ar", "ru").
+
+Text samples:
+${
+  pastEvents
+    ?.slice(-3)
+    .map((e) => e.event_text)
+    .join("\n") || ""
+}
+${
+  userEnteredEvents
+    .slice(0, 3)
+    .map((e) => e.event_text)
+    .join("\n") || ""
+}
+${mission?.mission_text || ""}
+
+Return only the language code, nothing else.`
+
+    let detectedLanguage = userLanguage || "en"
+
+    if (pastEvents?.length || userEnteredEvents.length || mission?.mission_text) {
+      try {
+        const geminiApiKey = process.env.Gemini_API
+        if (!geminiApiKey) {
+          console.error("[v0] Gemini API key is missing")
+          return NextResponse.json({ error: "Gemini API key not configured" }, { status: 500 })
+        }
+
+        const langDetectResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: detectLanguagePrompt }] }],
+              generationConfig: { temperature: 0.1, maxOutputTokens: 10 },
+            }),
+          },
+        )
+
+        if (langDetectResponse.ok) {
+          const langData = await langDetectResponse.json()
+          const langCode = langData.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toLowerCase()
+          if (langCode && langCode.length === 2) {
+            detectedLanguage = langCode
+            console.log("[v0] Language detected from user input:", detectedLanguage)
+          }
+        }
+      } catch (error) {
+        console.log("[v0] Language detection failed, using default:", detectedLanguage)
+      }
+    }
+
+    const languageInstruction =
+      detectedLanguage !== "en"
+        ? `\n\nIMPORTANT: The user writes in ${detectedLanguage} language. You MUST respond in ${detectedLanguage} language. All predictions must be written in ${detectedLanguage}.`
+        : ""
+
     const prompt = `You are a thoughtful life coach helping someone explore their future possibilities.
 
 Life Path Theme: "${branchName}"
@@ -96,7 +156,7 @@ Recent Past (Last 7 years):
 ${pastContext}
 
 User's Plans for This Path:
-${futureContext}
+${futureContext}${languageInstruction}
 
 Based on the theme "${branchName}", ${mission?.mission_text ? "their life mission, " : ""}the person's recent past, and their stated plans, generate 3-5 important milestone events that could realistically happen in their future on this life path. 
 
@@ -107,7 +167,7 @@ Requirements:
 - Be realistic and thoughtful, not overly optimistic or pessimistic
 - Spread events across different life stages (don't cluster them)
 - IMPORTANT: Do NOT predict events for these years that already have content: ${Array.from(filledYears).join(", ")}
-- Consider ALL the user's entered plans when generating predictions - they provide important context about this life path
+- Consider ALL the user's entered plans when generating predictions - they provide important context about this life path${detectedLanguage !== "en" ? `\n- Write ALL predictions in ${detectedLanguage} language` : ""}
 
 Return ONLY a JSON array of objects with this exact format:
 [
