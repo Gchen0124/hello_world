@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { X, Sparkles, RotateCcw } from "lucide-react"
 import { useLanguage } from "@/lib/i18n/language-context"
+import { getTranslation } from "@/lib/i18n/translations"
 
 interface PromptCustomizationModalProps {
   isOpen: boolean
@@ -59,7 +60,8 @@ CRITICAL RULES:
 }
 
 export function PromptCustomizationModal({ isOpen, onClose }: PromptCustomizationModalProps) {
-  const { t } = useLanguage()
+  const { language } = useLanguage()
+  const t = (key: Parameters<typeof getTranslation>[1]) => getTranslation(language, key)
   const [activeTab, setActiveTab] = useState<keyof typeof DEFAULT_PROMPTS>("timeline_prediction")
   const [prompts, setPrompts] = useState(DEFAULT_PROMPTS)
   const [customPrompts, setCustomPrompts] = useState<Record<string, string>>({})
