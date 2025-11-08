@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/lib/i18n/language-context"
 import { getTranslation } from "@/lib/i18n/translations"
 import { LanguageSelector } from "@/components/language-selector"
+import { PromptCustomizationModal } from "@/components/prompt-customization-modal"
 
 type EventData = {
   [year: number]: string
@@ -106,6 +107,9 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
   const [isSaving, setIsSaving] = useState(false)
   const [adaptingBranch, setAdaptingBranch] = useState<number | null>(null)
   const [adaptingStepBranch, setAdaptingStepBranch] = useState<number | null>(null)
+
+  // ADDED STATE FOR PROMPT CUSTOMIZATION MODAL
+  const [isPromptModalOpen, setIsPromptModalOpen] = useState(false)
 
   const supabase = createClient()
 
@@ -1045,21 +1049,33 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
 
   return (
     <div className="mx-auto max-w-7xl p-4 py-12 md:p-8">
-      {/* ADDED HEADER WITH LOGOUT BUTTON */}
+      {/* HEADER WITH LOGOUT AND PROMPT CUSTOMIZATION BUTTON */}
       <div className="mb-8 flex items-center justify-between">
         <LanguageSelector />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={async () => {
-            const supabase = createClient()
-            await supabase.auth.signOut()
-            window.location.href = "/auth/login"
-          }}
-          className="glass border-white/20 hover:border-destructive/50 hover:text-destructive transition-all"
-        >
-          {t("logout")}
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* ADDED PROMPT CUSTOMIZATION BUTTON */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsPromptModalOpen(true)}
+            className="glass border-white/20 hover:border-primary/50 transition-all"
+          >
+            <Sparkles className="mr-2 h-4 w-4" />
+            {t("customizeAIPrompts")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              const supabase = createClient()
+              await supabase.auth.signOut()
+              window.location.href = "/auth/login"
+            }}
+            className="glass border-white/20 hover:border-destructive/50 hover:text-destructive transition-all"
+          >
+            {t("logout")}
+          </Button>
+        </div>
       </div>
 
       <div className="mb-16 text-center">
@@ -1121,7 +1137,7 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
 
         <div className="my-12 flex items-center gap-4">
           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-primary/50 to-primary" />
-          <div className="glass-strong rounded-full px-8 py-3 font-semibold text-foreground shadow-lg glow-strong text-primary">
+          <div className="glass-strong rounded-full px-8 py-3 font-semibold text-foreground glow-strong text-primary">
             {`${t("year")}${currentAge} - ${t("now")}`}
           </div>
           <div className="h-px flex-1 bg-gradient-to-r from-primary via-primary/50 to-transparent" />
@@ -1361,6 +1377,8 @@ export default function LifetimeTimeline({ userId }: { userId: string }) {
           </div>
         </div>
       </div>
+      {/* ADDED PROMPT CUSTOMIZATION MODAL */}
+      <PromptCustomizationModal isOpen={isPromptModalOpen} onClose={() => setIsPromptModalOpen(false)} />
     </div>
   )
 }

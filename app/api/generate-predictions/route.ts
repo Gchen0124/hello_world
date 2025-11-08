@@ -147,7 +147,29 @@ Return only the language code, nothing else.`
         ? `\n\nIMPORTANT: The user writes in ${detectedLanguage} language. You MUST respond in ${detectedLanguage} language. All predictions must be written in ${detectedLanguage}.`
         : ""
 
-    const prompt = `You are a thoughtful life coach helping someone explore their future possibilities.
+    const { data: customPromptData } = await supabase
+      .from("custom_prompts")
+      .select("custom_prompt")
+      .eq("user_id", user.id)
+      .eq("prompt_type", "timeline_prediction")
+      .eq("is_active", true)
+      .single()
+
+    let prompt: string
+
+    if (customPromptData?.custom_prompt) {
+      // Use custom prompt with variable substitution
+      prompt = customPromptData.custom_prompt
+        .replace(/\{branchName\}/g, branchName)
+        .replace(/\{currentAge\}/g, currentAge.toString())
+        .replace(/\{missionText\}/g, mission?.mission_text || "No mission defined")
+        .replace(/\{pastEvents\}/g, pastContext)
+        .replace(/\{futureEvents\}/g, futureContext)
+
+      console.log("[v0] Using custom prompt for predictions")
+    } else {
+      // Use default prompt
+      prompt = `You are a thoughtful life coach helping someone explore their future possibilities.
 
 Life Path Theme: "${branchName}"
 Current Age: ${currentAge}${missionContext}
@@ -176,6 +198,7 @@ Return ONLY a JSON array of objects with this exact format:
 ]
 
 Do not include any other text, explanations, or markdown formatting.`
+    }
 
     console.log("[v0] Calling Gemini API for branch", branchIndex)
     console.log("[v0] Filled years to avoid:", Array.from(filledYears).join(", "))
